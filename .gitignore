@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+results/
+.env
+.venv
+dataset/
+import/
+eval/eval_with_LP_results.json

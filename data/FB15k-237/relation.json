@@ -1,0 +1,1187 @@
+[
+    {
+        "freebase": "/location/country/form_of_government",
+        "id": "0",
+        "label": "hasGovernmentType"
+    },
+    {
+        "freebase": "/tv/tv_program/regular_cast./tv/regular_tv_appearance/actor",
+        "id": "1",
+        "label": "actedIn"
+    },
+    {
+        "freebase": "/media_common/netflix_genre/titles",
+        "id": "2",
+        "label": "hasNetflixGenreTitle"
+    },
+    {
+        "freebase": "/award/award_winner/awards_won./award/award_honor/award_winner",
+        "id": "3",
+        "label": "hasAwardWinner"
+    },
+    {
+        "freebase": "/soccer/football_team/current_roster./sports/sports_team_roster/position",
+        "id": "4",
+        "label": "hasRosterPosition"
+    },
+    {
+        "freebase": "/soccer/football_team/current_roster./soccer/football_roster_position/position",
+        "id": "5",
+        "label": "hasRosterPosition"
+    },
+    {
+        "freebase": "/film/actor/film./film/performance/film",
+        "id": "6",
+        "label": "actedIn"
+    },
+    {
+        "freebase": "/award/award_category/nominees./award/award_nomination/nominated_for",
+        "id": "7",
+        "label": "hasNominees"
+    },
+    {
+        "freebase": "/award/award_nominee/award_nominations./award/award_nomination/award_nominee",
+        "id": "8",
+        "label": "hasNominee"
+    },
+    {
+        "freebase": "/music/performance_role/regular_performances./music/group_membership/role",
+        "id": "9",
+        "label": "hasRegularPerformanceRole"
+    },
+    {
+        "freebase": "/award/award_category/winners./award/award_honor/ceremony",
+        "id": "10",
+        "label": "hasWinner"
+    },
+    {
+        "freebase": "/film/film/release_date_s./film/film_regional_release_date/film_release_distribution_medium",
+        "id": "11",
+        "label": "hasReleaseMedium"
+    },
+    {
+        "freebase": "/award/award_winning_work/awards_won./award/award_honor/award_winner",
+        "id": "12",
+        "label": "hasAward"
+    },
+    {
+        "freebase": "/film/film/release_date_s./film/film_regional_release_date/film_release_region",
+        "id": "13",
+        "label": "hasRegionalReleaseDate"
+    },
+    {
+        "freebase": "/film/film/language",
+        "id": "14",
+        "label": "language"
+    },
+    {
+        "freebase": "/location/location/contains",
+        "id": "15",
+        "label": "containsLocation"
+    },
+    {
+        "freebase": "/organization/organization/headquarters./location/mailing_address/country",
+        "id": "16",
+        "label": "headquarteredIn"
+    },
+    {
+        "freebase": "/people/person/profession",
+        "id": "17",
+        "label": "hasProfession"
+    },
+    {
+        "freebase": "/location/statistical_region/religions./location/religion_percentage/religion",
+        "id": "18",
+        "label": "hasReligion"
+    },
+    {
+        "freebase": "/award/award_nominee/award_nominations./award/award_nomination/award",
+        "id": "19",
+        "label": "hasNomination"
+    },
+    {
+        "freebase": "/music/genre/artists",
+        "id": "20",
+        "label": "hasArtists"
+    },
+    {
+        "freebase": "/influence/influence_node/influenced_by",
+        "id": "21",
+        "label": "influencedBy"
+    },
+    {
+        "freebase": "/education/educational_institution/students_graduates./education/education/student",
+        "id": "22",
+        "label": "hasStudent"
+    },
+    {
+        "freebase": "/organization/organization_member/member_of./organization/organization_membership/organization",
+        "id": "23",
+        "label": "memberOf"
+    },
+    {
+        "freebase": "/people/person/place_of_birth",
+        "id": "24",
+        "label": "hasPlaceOfBirth"
+    },
+    {
+        "freebase": "/common/topic/webpage./common/webpage/category",
+        "id": "25",
+        "label": "hasCategory"
+    },
+    {
+        "freebase": "/film/film/other_crew./film/film_crew_gig/film_crew_role",
+        "id": "26",
+        "label": "crewRole"
+    },
+    {
+        "freebase": "/award/award_ceremony/awards_presented./award/award_honor/award_winner",
+        "id": "27",
+        "label": "wonAward"
+    },
+    {
+        "freebase": "/film/film/country",
+        "id": "28",
+        "label": "producedIn"
+    },
+    {
+        "freebase": "/olympics/olympic_sport/athletes./olympics/olympic_athlete_affiliation/country",
+        "id": "29",
+        "label": "hasCountry"
+    },
+    {
+        "freebase": "/award/award_winning_work/awards_won./award/award_honor/award",
+        "id": "30",
+        "label": "hasAward"
+    },
+    {
+        "freebase": "/film/film/genre",
+        "id": "31",
+        "label": "hasGenre"
+    },
+    {
+        "freebase": "/film/film_distributor/films_distributed./film/film_film_distributor_relationship/film",
+        "id": "32",
+        "label": "hasDistributed"
+    },
+    {
+        "freebase": "/location/statistical_region/rent50_2./measurement_unit/dated_money_value/currency",
+        "id": "33",
+        "label": "rent50Currency"
+    },
+    {
+        "freebase": "/film/film/estimated_budget./measurement_unit/dated_money_value/currency",
+        "id": "34",
+        "label": "estimated_budget_currency"
+    },
+    {
+        "freebase": "/government/legislative_session/members./government/government_position_held/district_represented",
+        "id": "35",
+        "label": "hasMember"
+    },
+    {
+        "freebase": "/sports/sports_team/roster./american_football/football_historical_roster_position/position_s",
+        "id": "36",
+        "label": "hasPosition"
+    },
+    {
+        "freebase": "/government/government_office_category/officeholders./government/government_position_held/jurisdiction_of_office",
+        "id": "37",
+        "label": "hasJurisdiction"
+    },
+    {
+        "freebase": "/award/award_nominee/award_nominations./award/award_nomination/nominated_for",
+        "id": "38",
+        "label": "nominatedFor"
+    },
+    {
+        "freebase": "/people/deceased_person/place_of_death",
+        "id": "39",
+        "label": "placeOfDeath"
+    },
+    {
+        "freebase": "/sports/pro_athlete/teams./sports/sports_team_roster/team",
+        "id": "40",
+        "label": "playsFor"
+    },
+    {
+        "freebase": "/music/artist/track_contributions./music/track_contribution/role",
+        "id": "41",
+        "label": "hasContributions"
+    },
+    {
+        "freebase": "/music/instrument/instrumentalists",
+        "id": "42",
+        "label": "hasInstrumentalist"
+    },
+    {
+        "freebase": "/people/person/gender",
+        "id": "43",
+        "label": "hasGender"
+    },
+    {
+        "freebase": "/business/job_title/people_with_this_title./business/employment_tenure/company",
+        "id": "44",
+        "label": "worksAt"
+    },
+    {
+        "freebase": "/base/popstra/celebrity/friendship./base/popstra/friendship/participant",
+        "id": "45",
+        "label": "hasFriend"
+    },
+    {
+        "freebase": "/business/business_operation/industry",
+        "id": "46",
+        "label": "hasIndustry"
+    },
+    {
+        "freebase": "/award/award_category/winners./award/award_honor/award_winner",
+        "id": "47",
+        "label": "hasWinner"
+    },
+    {
+        "freebase": "/people/person/nationality",
+        "id": "48",
+        "label": "hasNationality"
+    },
+    {
+        "freebase": "/sports/sports_team/roster./baseball/baseball_roster_position/position",
+        "id": "49",
+        "label": "hasRosterPosition"
+    },
+    {
+        "freebase": "/people/cause_of_death/people",
+        "id": "50",
+        "label": "hasCauseOfDeath"
+    },
+    {
+        "freebase": "/tv/tv_program/languages",
+        "id": "51",
+        "label": "hasLanguages"
+    },
+    {
+        "freebase": "/music/genre/parent_genre",
+        "id": "52",
+        "label": "hasParentGenre"
+    },
+    {
+        "freebase": "/base/popstra/celebrity/breakup./base/popstra/breakup/participant",
+        "id": "53",
+        "label": "hasExSpouse"
+    },
+    {
+        "freebase": "/location/country/capital",
+        "id": "54",
+        "label": "capital"
+    },
+    {
+        "freebase": "/film/special_film_performance_type/film_performance_type./film/performance/film",
+        "id": "55",
+        "label": "hasPerformanceType"
+    },
+    {
+        "freebase": "/location/hud_county_place/place",
+        "id": "56",
+        "label": "countyPlace"
+    },
+    {
+        "freebase": "/music/performance_role/guest_performances./music/recording_contribution/performance_role",
+        "id": "57",
+        "label": "hasGuestPerformer"
+    },
+    {
+        "freebase": "/location/location/adjoin_s./location/adjoining_relationship/adjoins",
+        "id": "58",
+        "label": "hasBorder"
+    },
+    {
+        "freebase": "/film/film_subject/films",
+        "id": "59",
+        "label": "hasSubject"
+    },
+    {
+        "freebase": "/base/schemastaging/person_extra/net_worth./measurement_unit/dated_money_value/currency",
+        "id": "60",
+        "label": "hasNetWorthCurrency"
+    },
+    {
+        "freebase": "/education/educational_institution/colors",
+        "id": "61",
+        "label": "hasColors"
+    },
+    {
+        "freebase": "/base/aareas/schema/administrative_area/administrative_parent",
+        "id": "62",
+        "label": "hasAdminParent"
+    },
+    {
+        "freebase": "/organization/role/leaders./organization/leadership/organization",
+        "id": "63",
+        "label": "hasLeader"
+    },
+    {
+        "freebase": "/government/legislative_session/members./government/government_position_held/legislative_sessions",
+        "id": "64",
+        "label": "hasLegislativeSessionMember"
+    },
+    {
+        "freebase": "/olympics/olympic_games/sports",
+        "id": "65",
+        "label": "hasEvents"
+    },
+    {
+        "freebase": "/people/person/places_lived./people/place_lived/location",
+        "id": "66",
+        "label": "livingIn"
+    },
+    {
+        "freebase": "/award/award_category/disciplines_or_subjects",
+        "id": "67",
+        "label": "hasDiscipline"
+    },
+    {
+        "freebase": "/sports/professional_sports_team/draft_picks./sports/sports_league_draft_pick/school",
+        "id": "68",
+        "label": "hasDraftPickFromSchool"
+    },
+    {
+        "freebase": "/olympics/olympic_participating_country/medals_won./olympics/olympic_medal_honor/olympics",
+        "id": "69",
+        "label": "hasMedals"
+    },
+    {
+        "freebase": "/language/human_language/countries_spoken_in",
+        "id": "70",
+        "label": "spokenInCountries"
+    },
+    {
+        "freebase": "/people/ethnicity/people",
+        "id": "71",
+        "label": "hasEthnicity"
+    },
+    {
+        "freebase": "/olympics/olympic_participating_country/athletes./olympics/olympic_athlete_affiliation/olympics",
+        "id": "72",
+        "label": "hasWife"
+    },
+    {
+        "freebase": "/olympics/olympic_participating_country/medals_won./olympics/olympic_medal_honor/medal",
+        "id": "73",
+        "label": "hasMedals"
+    },
+    {
+        "freebase": "/film/film/other_crew./film/film_crew_gig/crewmember",
+        "id": "74",
+        "label": "hasCrewMember"
+    },
+    {
+        "freebase": "/music/performance_role/track_performances./music/track_contribution/role",
+        "id": "75",
+        "label": "performedBy"
+    },
+    {
+        "freebase": "/music/record_label/artist",
+        "id": "76",
+        "label": "belongsToRecordLabel"
+    },
+    {
+        "freebase": "/base/popstra/celebrity/dated./base/popstra/dated/participant",
+        "id": "77",
+        "label": "hasPartner"
+    },
+    {
+        "freebase": "/base/locations/continents/countries_within",
+        "id": "78",
+        "label": "containsCountry"
+    },
+    {
+        "freebase": "/sports/sports_league_draft/picks./sports/sports_league_draft_pick/school",
+        "id": "79",
+        "label": "hasDraftPickFromSchool"
+    },
+    {
+        "freebase": "/sports/sports_team/sport",
+        "id": "80",
+        "label": "plays"
+    },
+    {
+        "freebase": "/education/educational_institution_campus/educational_institution",
+        "id": "81",
+        "label": "hasCampus"
+    },
+    {
+        "freebase": "/people/person/religion",
+        "id": "82",
+        "label": "hasReligion"
+    },
+    {
+        "freebase": "/organization/organization/headquarters./location/mailing_address/citytown",
+        "id": "83",
+        "label": "hasLocation"
+    },
+    {
+        "freebase": "/film/film/produced_by",
+        "id": "84",
+        "label": "hasProducer"
+    },
+    {
+        "freebase": "/people/person/spouse_s./people/marriage/type_of_union",
+        "id": "85",
+        "label": "hasWife"
+    },
+    {
+        "freebase": "/film/film/production_companies",
+        "id": "86",
+        "label": "hasProductionCompanies"
+    },
+    {
+        "freebase": "/location/country/second_level_divisions",
+        "id": "87",
+        "label": "hasAdministrative"
+    },
+    {
+        "freebase": "/base/culturalevent/event/entity_involved",
+        "id": "88",
+        "label": "hasInvolvedEntity"
+    },
+    {
+        "freebase": "/education/educational_degree/people_with_this_degree./education/education/institution",
+        "id": "89",
+        "label": "educatedAt"
+    },
+    {
+        "freebase": "/film/film/distributors./film/film_film_distributor_relationship/film_distribution_medium",
+        "id": "90",
+        "label": "hasDistributor"
+    },
+    {
+        "freebase": "/tv/tv_program/tv_producer./tv/tv_producer_term/producer_type",
+        "id": "91",
+        "label": "hasProducer"
+    },
+    {
+        "freebase": "/music/performance_role/regular_performances./music/group_membership/group",
+        "id": "92",
+        "label": "isMemberOfGroup"
+    },
+    {
+        "freebase": "/government/politician/government_positions_held./government/government_position_held/legislative_sessions",
+        "id": "93",
+        "label": "hasLegislativeSession"
+    },
+    {
+        "freebase": "/sports/sports_team_location/teams",
+        "id": "94",
+        "label": "hasTeam"
+    },
+    {
+        "freebase": "/sports/sports_team/colors",
+        "id": "95",
+        "label": "hasColors"
+    },
+    {
+        "freebase": "/sports/professional_sports_team/draft_picks./sports/sports_league_draft_pick/draft",
+        "id": "96",
+        "label": "hasDraftPicks"
+    },
+    {
+        "freebase": "/award/award_nominated_work/award_nominations./award/award_nomination/nominated_for",
+        "id": "97",
+        "label": "nominated_for"
+    },
+    {
+        "freebase": "/baseball/baseball_team/team_stats./baseball/baseball_team_stats/season",
+        "id": "98",
+        "label": "hasSeason"
+    },
+    {
+        "freebase": "/user/alexander/philosophy/philosopher/interests",
+        "id": "99",
+        "label": "hasInterests"
+    },
+    {
+        "freebase": "/people/person/languages",
+        "id": "100",
+        "label": "speak"
+    },
+    {
+        "freebase": "/education/educational_institution/students_graduates./education/education/major_field_of_study",
+        "id": "101",
+        "label": "hasStudent"
+    },
+    {
+        "freebase": "/film/director/film",
+        "id": "102",
+        "label": "director"
+    },
+    {
+        "freebase": "/award/award_ceremony/awards_presented./award/award_honor/honored_for",
+        "id": "103",
+        "label": "honoredFor"
+    },
+    {
+        "freebase": "/olympics/olympic_sport/athletes./olympics/olympic_athlete_affiliation/olympics",
+        "id": "104",
+        "label": "hasParticipatedIn"
+    },
+    {
+        "freebase": "/film/film/costume_design_by",
+        "id": "105",
+        "label": ":hasCostumeDesigner"
+    },
+    {
+        "freebase": "/film/film/featured_film_locations",
+        "id": "106",
+        "label": "hasFeaturedFilmLocations"
+    },
+    {
+        "freebase": "/tv/tv_program/genre",
+        "id": "107",
+        "label": "hasGenre"
+    },
+    {
+        "freebase": "/organization/endowed_organization/endowment./measurement_unit/dated_money_value/currency",
+        "id": "108",
+        "label": "hasEndowmentCurrency"
+    },
+    {
+        "freebase": "/film/film/written_by",
+        "id": "109",
+        "label": "hasWriter"
+    },
+    {
+        "freebase": "/tv/tv_producer/programs_produced./tv/tv_producer_term/producer_type",
+        "id": "110",
+        "label": "producedPrograms"
+    },
+    {
+        "freebase": "/location/hud_county_place/county",
+        "id": "111",
+        "label": "hasCounty"
+    },
+    {
+        "freebase": "/education/educational_degree/people_with_this_degree./education/education/major_field_of_study",
+        "id": "112",
+        "label": "hasDegree"
+    },
+    {
+        "freebase": "/base/schemastaging/organization_extra/phone_number./base/schemastaging/phone_sandbox/contact_category",
+        "id": "113",
+        "label": "hasPhone"
+    },
+    {
+        "freebase": "/base/saturdaynightlive/snl_cast_member/seasons./base/saturdaynightlive/snl_season_tenure/cast_members",
+        "id": "114",
+        "label": "hasSeasons"
+    },
+    {
+        "freebase": "/film/film/film_format",
+        "id": "115",
+        "label": "hasFilmFormat"
+    },
+    {
+        "freebase": "/film/film/music",
+        "id": "116",
+        "label": "hasSoundtrack"
+    },
+    {
+        "freebase": "/sports/sports_team/roster./american_football/football_roster_position/position",
+        "id": "117",
+        "label": "hasRosterPosition"
+    },
+    {
+        "freebase": "/user/tsegaran/random/taxonomy_subject/entry./user/tsegaran/random/taxonomy_entry/taxonomy",
+        "id": "118",
+        "label": "hasTaxonomyEntry"
+    },
+    {
+        "freebase": "/celebrities/celebrity/celebrity_friends./celebrities/friendship/friend",
+        "id": "119",
+        "label": "hasFriend"
+    },
+    {
+        "freebase": "/location/hud_foreclosure_area/estimated_number_of_mortgages./measurement_unit/dated_integer/source",
+        "id": "120",
+        "label": "hasEstimatedMortgages"
+    },
+    {
+        "freebase": "/base/x2010fifaworldcupsouthafrica/world_cup_squad/current_world_cup_squad./base/x2010fifaworldcupsouthafrica/current_world_cup_squad/current_club",
+        "id": "121",
+        "label": "hasCurrentClub"
+    },
+    {
+        "freebase": "/base/popstra/location/vacationers./base/popstra/vacation_choice/vacationer",
+        "id": "122",
+        "label": "hasVacationers"
+    },
+    {
+        "freebase": "/base/popstra/celebrity/canoodled./base/popstra/canoodled/participant",
+        "id": "123",
+        "label": "hasWife"
+    },
+    {
+        "freebase": "/education/educational_institution/school_type",
+        "id": "124",
+        "label": "hasSchoolType"
+    },
+    {
+        "freebase": "/sports/sport/pro_athletes./sports/pro_sports_played/athlete",
+        "id": "125",
+        "label": "hasAthlete"
+    },
+    {
+        "freebase": "/award/hall_of_fame/inductees./award/hall_of_fame_induction/inductee",
+        "id": "126",
+        "label": "isInductedIntoHallOfFame"
+    },
+    {
+        "freebase": "/base/biblioness/bibs_location/state",
+        "id": "127",
+        "label": "hasState"
+    },
+    {
+        "freebase": "/education/university/local_tuition./measurement_unit/dated_money_value/currency",
+        "id": "128",
+        "label": "hasLocalTuitionCurrency"
+    },
+    {
+        "freebase": "/business/business_operation/revenue./measurement_unit/dated_money_value/currency",
+        "id": "129",
+        "label": "hasCurrency"
+    },
+    {
+        "freebase": "/sports/sports_position/players./sports/sports_team_roster/team",
+        "id": "130",
+        "label": "hasPlayer"
+    },
+    {
+        "freebase": "/military/military_conflict/combatants./military/military_combatant_group/combatants",
+        "id": "131",
+        "label": "hasCombatant"
+    },
+    {
+        "freebase": "/sports/sports_league/teams./sports/sports_league_participation/team",
+        "id": "132",
+        "label": "hasTeam"
+    },
+    {
+        "freebase": "/base/biblioness/bibs_location/country",
+        "id": "133",
+        "label": "hasCountry"
+    },
+    {
+        "freebase": "/music/group_member/membership./music/group_membership/role",
+        "id": "134",
+        "label": "hasMemberRole"
+    },
+    {
+        "freebase": "/location/administrative_division/country",
+        "id": "135",
+        "label": "hasCountry"
+    },
+    {
+        "freebase": "/film/film/executive_produced_by",
+        "id": "136",
+        "label": "hasExecutiveProducer"
+    },
+    {
+        "freebase": "/food/food/nutrients./food/nutrition_fact/nutrient",
+        "id": "137",
+        "label": "hasNutrient"
+    },
+    {
+        "freebase": "/music/group_member/membership./music/group_membership/group",
+        "id": "138",
+        "label": "hasMember"
+    },
+    {
+        "freebase": "/location/statistical_region/gdp_nominal_per_capita./measurement_unit/dated_money_value/currency",
+        "id": "139",
+        "label": "hasGDPNominalPerCapita"
+    },
+    {
+        "freebase": "/education/field_of_study/students_majoring./education/education/student",
+        "id": "140",
+        "label": "hasMajor"
+    },
+    {
+        "freebase": "/award/award_winning_work/awards_won./award/award_honor/honored_for",
+        "id": "141",
+        "label": "hasWonAwards"
+    },
+    {
+        "freebase": "/sports/sports_team/roster./basketball/basketball_roster_position/position",
+        "id": "142",
+        "label": "hasPlayer"
+    },
+    {
+        "freebase": "/organization/organization/headquarters./location/mailing_address/state_province_region",
+        "id": "143",
+        "label": "hasHeadquartersLocation"
+    },
+    {
+        "freebase": "/base/aareas/schema/administrative_area/capital",
+        "id": "144",
+        "label": "hasCapital"
+    },
+    {
+        "freebase": "/tv/tv_producer/programs_produced./tv/tv_producer_term/program",
+        "id": "145",
+        "label": "producedPrograms"
+    },
+    {
+        "freebase": "/education/educational_institution/campuses",
+        "id": "146",
+        "label": "hasCampuses"
+    },
+    {
+        "freebase": "/film/film/distributors./film/film_film_distributor_relationship/region",
+        "id": "147",
+        "label": "distributorsInRegion"
+    },
+    {
+        "freebase": "/travel/travel_destination/climate./travel/travel_destination_monthly_climate/month",
+        "id": "148",
+        "label": "hasMonthlyClimate"
+    },
+    {
+        "freebase": "/medicine/disease/notable_people_with_this_condition",
+        "id": "149",
+        "label": "hasNotablePeople"
+    },
+    {
+        "freebase": "/base/schemastaging/organization_extra/phone_number./base/schemastaging/phone_sandbox/service_location",
+        "id": "150",
+        "label": "hasPhoneNumber"
+    },
+    {
+        "freebase": "/people/ethnicity/geographic_distribution",
+        "id": "151",
+        "label": "geographic_distribution"
+    },
+    {
+        "freebase": "/military/military_combatant/military_conflicts./military/military_combatant_group/combatants",
+        "id": "152",
+        "label": "foughtIn"
+    },
+    {
+        "freebase": "/film/film/personal_appearances./film/personal_film_appearance/person",
+        "id": "153",
+        "label": "hasAppearance"
+    },
+    {
+        "freebase": "/location/location/time_zones",
+        "id": "154",
+        "label": "hasTimeZone"
+    },
+    {
+        "freebase": "/film/film/story_by",
+        "id": "155",
+        "label": "hasWriter"
+    },
+    {
+        "freebase": "/base/petbreeds/city_with_dogs/top_breeds./base/petbreeds/dog_city_relationship/dog_breed",
+        "id": "156",
+        "label": "hasDogBreed"
+    },
+    {
+        "freebase": "/olympics/olympic_games/participating_countries",
+        "id": "157",
+        "label": "hasParticipantCountries"
+    },
+    {
+        "freebase": "/tv/tv_network/programs./tv/tv_network_duration/program",
+        "id": "158",
+        "label": "hasPrograms"
+    },
+    {
+        "freebase": "/people/person/employment_history./business/employment_tenure/company",
+        "id": "159",
+        "label": "workedAt"
+    },
+    {
+        "freebase": "/music/artist/origin",
+        "id": "160",
+        "label": "hasOrigin"
+    },
+    {
+        "freebase": "/people/marriage_union_type/unions_of_this_type./people/marriage/location_of_ceremony",
+        "id": "161",
+        "label": "hasSpouse"
+    },
+    {
+        "freebase": "/tv/tv_writer/tv_programs./tv/tv_program_writer_relationship/tv_program",
+        "id": "162",
+        "label": "hasWriter"
+    },
+    {
+        "freebase": "/time/event/locations",
+        "id": "163",
+        "label": "hasLocation"
+    },
+    {
+        "freebase": "/celebrities/celebrity/sexual_relationships./celebrities/romantic_relationship/celebrity",
+        "id": "164",
+        "label": "hasSpouse"
+    },
+    {
+        "freebase": "/government/political_party/politicians_in_this_party./government/political_party_tenure/politician",
+        "id": "165",
+        "label": "hasPolitician"
+    },
+    {
+        "freebase": "/education/university/domestic_tuition./measurement_unit/dated_money_value/currency",
+        "id": "166",
+        "label": "hasDomesticTuition"
+    },
+    {
+        "freebase": "/organization/non_profit_organization/registered_with./organization/non_profit_registration/registering_agency",
+        "id": "167",
+        "label": "registeredWith"
+    },
+    {
+        "freebase": "/user/ktrueman/default_domain/international_organization/member_states",
+        "id": "168",
+        "label": "hasMemberStates"
+    },
+    {
+        "freebase": "/american_football/football_team/current_roster./sports/sports_team_roster/position",
+        "id": "169",
+        "label": "rosterPosition"
+    },
+    {
+        "freebase": "/soccer/football_player/current_team./sports/sports_team_roster/team",
+        "id": "170",
+        "label": "playsFor"
+    },
+    {
+        "freebase": "/olympics/olympic_games/medals_awarded./olympics/olympic_medal_honor/medal",
+        "id": "171",
+        "label": "hasMedals"
+    },
+    {
+        "freebase": "/award/ranked_item/appears_in_ranked_lists./award/ranking/list",
+        "id": "172",
+        "label": "isInRankedList"
+    },
+    {
+        "freebase": "/film/film_set_designer/film_sets_designed",
+        "id": "173",
+        "label": "hasDesignedFilmSets"
+    },
+    {
+        "freebase": "/user/jg/default_domain/olympic_games/sports",
+        "id": "174",
+        "label": "hasSport"
+    },
+    {
+        "freebase": "/people/person/sibling_s./people/sibling_relationship/sibling",
+        "id": "175",
+        "label": "hasSibling"
+    },
+    {
+        "freebase": "/base/marchmadness/ncaa_basketball_tournament/seeds./base/marchmadness/ncaa_tournament_seed/team",
+        "id": "176",
+        "label": "hasTeam"
+    },
+    {
+        "freebase": "/music/artist/contribution./music/recording_contribution/performance_role",
+        "id": "177",
+        "label": "hasPerformanceRole"
+    },
+    {
+        "freebase": "/sports/sports_position/players./sports/sports_team_roster/position",
+        "id": "178",
+        "label": "hasPosition"
+    },
+    {
+        "freebase": "/government/politician/government_positions_held./government/government_position_held/basic_title",
+        "id": "179",
+        "label": "hasGovernmentPosition"
+    },
+    {
+        "freebase": "/sports/sports_position/players./american_football/football_historical_roster_position/position_s",
+        "id": "180",
+        "label": "playerPosition"
+    },
+    {
+        "freebase": "/people/profession/specialization_of",
+        "id": "181",
+        "label": "hasSpecialization"
+    },
+    {
+        "freebase": "/award/award_category/category_of",
+        "id": "182",
+        "label": "hasCategory"
+    },
+    {
+        "freebase": "/film/film/cinematography",
+        "id": "183",
+        "label": "hasCinematographer"
+    },
+    {
+        "freebase": "/film/film/film_production_design_by",
+        "id": "184",
+        "label": "hasProductionDesignBy"
+    },
+    {
+        "freebase": "/tv/tv_program/country_of_origin",
+        "id": "185",
+        "label": "originCountry"
+    },
+    {
+        "freebase": "/film/film/edited_by",
+        "id": "186",
+        "label": "editedBy"
+    },
+    {
+        "freebase": "/tv/tv_personality/tv_regular_appearances./tv/tv_regular_personal_appearance/program",
+        "id": "187",
+        "label": "hasProgram"
+    },
+    {
+        "freebase": "/education/field_of_study/students_majoring./education/education/major_field_of_study",
+        "id": "188",
+        "label": "hasMajor"
+    },
+    {
+        "freebase": "/education/educational_degree/people_with_this_degree./education/education/student",
+        "id": "189",
+        "label": "hasStudent"
+    },
+    {
+        "freebase": "/location/us_county/county_seat",
+        "id": "190",
+        "label": "hasCountySeat"
+    },
+    {
+        "freebase": "/film/film/film_festivals",
+        "id": "191",
+        "label": "hasFilmFestival"
+    },
+    {
+        "freebase": "/people/person/spouse_s./people/marriage/spouse",
+        "id": "192",
+        "label": "hasWife"
+    },
+    {
+        "freebase": "/film/film/runtime./film/film_cut/film_release_region",
+        "id": "193",
+        "label": "hasRuntime"
+    },
+    {
+        "freebase": "/location/capital_of_administrative_division/capital_of./location/administrative_division_capital_relationship/administrative_division",
+        "id": "194",
+        "label": "hasCapital"
+    },
+    {
+        "freebase": "/base/aareas/schema/administrative_area/administrative_area_type",
+        "id": "195",
+        "label": "adminType"
+    },
+    {
+        "freebase": "/influence/influence_node/peers./influence/peer_relationship/peers",
+        "id": "196",
+        "label": "hasPeer"
+    },
+    {
+        "freebase": "/government/governmental_body/members./government/government_position_held/legislative_sessions",
+        "id": "197",
+        "label": "hasMember"
+    },
+    {
+        "freebase": "/base/schemastaging/organization_extra/phone_number./base/schemastaging/phone_sandbox/service_language",
+        "id": "198",
+        "label": "hasPhoneNumber"
+    },
+    {
+        "freebase": "/organization/organization/place_founded",
+        "id": "199",
+        "label": "foundIn"
+    },
+    {
+        "freebase": "/base/eating/practicer_of_diet/diet",
+        "id": "200",
+        "label": "hasDiet"
+    },
+    {
+        "freebase": "/tv/tv_program/program_creator",
+        "id": "201",
+        "label": "hasCreator"
+    },
+    {
+        "freebase": "/people/deceased_person/place_of_burial",
+        "id": "202",
+        "label": "hasBurialPlace"
+    },
+    {
+        "freebase": "/film/film/release_date_s./film/film_regional_release_date/film_regional_debut_venue",
+        "id": "203",
+        "label": "hasWife"
+    },
+    {
+        "freebase": "/ice_hockey/hockey_team/current_roster./sports/sports_team_roster/position",
+        "id": "204",
+        "label": "hasCurrentRoster"
+    },
+    {
+        "freebase": "/location/administrative_division/first_level_division_of",
+        "id": "205",
+        "label": "hasAdministrativeDivision"
+    },
+    {
+        "freebase": "/location/statistical_region/gdp_real./measurement_unit/adjusted_money_value/adjustment_currency",
+        "id": "206",
+        "label": "hasGDPAdjustedCurrency"
+    },
+    {
+        "freebase": "/organization/organization/child./organization/organization_relationship/child",
+        "id": "207",
+        "label": "hasSubsidiary"
+    },
+    {
+        "freebase": "/business/business_operation/assets./measurement_unit/dated_money_value/currency",
+        "id": "208",
+        "label": "hasCurrency"
+    },
+    {
+        "freebase": "/film/person_or_entity_appearing_in_film/films./film/personal_film_appearance/type_of_appearance",
+        "id": "209",
+        "label": "hasAppearanceType"
+    },
+    {
+        "freebase": "/time/event/instance_of_recurring_event",
+        "id": "210",
+        "label": "isRecurringEvent"
+    },
+    {
+        "freebase": "/tv/non_character_role/tv_regular_personal_appearances./tv/tv_regular_personal_appearance/person",
+        "id": "211",
+        "label": "hasHost"
+    },
+    {
+        "freebase": "/film/actor/film./film/performance/special_performance_type",
+        "id": "212",
+        "label": "hasSpecialPerformanceType"
+    },
+    {
+        "freebase": "/business/business_operation/operating_income./measurement_unit/dated_money_value/currency",
+        "id": "213",
+        "label": "operatingIncomeCurrency"
+    },
+    {
+        "freebase": "/people/ethnicity/languages_spoken",
+        "id": "214",
+        "label": "speaks"
+    },
+    {
+        "freebase": "/base/americancomedy/celebrity_impressionist/celebrities_impersonated",
+        "id": "215",
+        "label": "hasImpersonatedCelebrities"
+    },
+    {
+        "freebase": "/medicine/symptom/symptom_of",
+        "id": "216",
+        "label": "symptoms"
+    },
+    {
+        "freebase": "/education/university/fraternities_and_sororities",
+        "id": "217",
+        "label": "hasFraternity"
+    },
+    {
+        "freebase": "/location/statistical_region/places_exported_to./location/imports_and_exports/exported_to",
+        "id": "218",
+        "label": "hasExportedTo"
+    },
+    {
+        "freebase": "/location/statistical_region/gdp_nominal./measurement_unit/dated_money_value/currency",
+        "id": "219",
+        "label": "gdpNominal"
+    },
+    {
+        "freebase": "/travel/travel_destination/how_to_get_here./travel/transportation/mode_of_transportation",
+        "id": "220",
+        "label": "hasHowToGetHere"
+    },
+    {
+        "freebase": "/location/country/official_language",
+        "id": "221",
+        "label": "hasOfficialLanguage"
+    },
+    {
+        "freebase": "/location/location/partially_contains",
+        "id": "222",
+        "label": "hasPart"
+    },
+    {
+        "freebase": "/film/film/film_art_direction_by",
+        "id": "223",
+        "label": "hasArtDirector"
+    },
+    {
+        "freebase": "/people/person/spouse_s./people/marriage/location_of_ceremony",
+        "id": "224",
+        "label": "hasWife"
+    },
+    {
+        "freebase": "/education/university/international_tuition./measurement_unit/dated_money_value/currency",
+        "id": "225",
+        "label": "hasInternationalTuitionCurrency"
+    },
+    {
+        "freebase": "/organization/organization_founder/organizations_founded",
+        "id": "226",
+        "label": "founder_of"
+    },
+    {
+        "freebase": "/film/film/dubbing_performances./film/dubbing_performance/actor",
+        "id": "227",
+        "label": "hasDubbingActor"
+    },
+    {
+        "freebase": "/dataworld/gardening_hint/split_to",
+        "id": "228",
+        "label": "hasSplitTo"
+    },
+    {
+        "freebase": "/medicine/disease/risk_factors",
+        "id": "229",
+        "label": "hasRiskFactors"
+    },
+    {
+        "freebase": "/film/film/prequel",
+        "id": "230",
+        "label": "hasPrequel"
+    },
+    {
+        "freebase": "/base/localfood/seasonal_month/produce_available./base/localfood/produce_availability/seasonal_months",
+        "id": "231",
+        "label": "seasonalProduce"
+    },
+    {
+        "freebase": "/film/actor/dubbing_performances./film/dubbing_performance/language",
+        "id": "232",
+        "label": "hasVoiceActingLanguage"
+    },
+    {
+        "freebase": "/broadcast/content/artist",
+        "id": "233",
+        "label": "hasArtist"
+    },
+    {
+        "freebase": "/location/statistical_region/gni_per_capita_in_ppp_dollars./measurement_unit/dated_money_value/currency",
+        "id": "234",
+        "label": "hasgniPerCapitaInPPPU SD"
+    },
+    {
+        "freebase": "/music/instrument/family",
+        "id": "235",
+        "label": "hasInstrumentFamily"
+    },
+    {
+        "freebase": "/government/politician/government_positions_held./government/government_position_held/jurisdiction_of_office",
+        "id": "236",
+        "label": "hasGovernmentPosition"
+    }
+]

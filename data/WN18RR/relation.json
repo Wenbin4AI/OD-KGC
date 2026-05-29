@@ -1,0 +1,57 @@
+[
+    {
+        "freebase": "_hypernym",
+        "id": 0,
+        "label": "isA"
+    },
+    {
+        "freebase": "_derivationally_related_form",
+        "id": 1,
+        "label": "derivedForm"
+    },
+    {
+        "freebase": "_instance_hypernym",
+        "id": 2,
+        "label": "instanceOf"
+    },
+    {
+        "freebase": "_also_see",
+        "id": 3,
+        "label": "relatedTo"
+    },
+    {
+        "freebase": "_member_meronym",
+        "id": 4,
+        "label": "memberOf"
+    },
+    {
+        "freebase": "_synset_domain_topic_of",
+        "id": 5,
+        "label": "domainTopic"
+    },
+    {
+        "freebase": "_has_part",
+        "id": 6,
+        "label": "hasPart"
+    },
+    {
+        "freebase": "_member_of_domain_usage",
+        "id": 7,
+        "label": "memberOfDomainUsage"
+    },
+    {
+        "freebase": "_member_of_domain_region",
+        "id": 8,
+        "label": "memberOfDomainRegion"
+    },
+    {
+        "freebase": "_verb_group",
+        "id": 9,
+        "label": "verbGroup"
+    },
+    {
+        "freebase": "_similar_to",
+        "id": 10,
+        "label": "similarTo"
+    }
+]
