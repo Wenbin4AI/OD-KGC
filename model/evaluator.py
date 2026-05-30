@@ -49,6 +49,18 @@ def set_random_seed(seed: int) -> None:
     random.seed(seed)
 
 
+def class_list_to_text(classes: Any) -> str:
+    if classes is None:
+        return "Unknown"
+
+    if isinstance(classes, list):
+        values = [str(x).strip() for x in classes if str(x).strip()]
+    else:
+        values = [str(classes).strip()]
+
+    return ", ".join(values) if values else "Unknown"
+
+
 # ============================================================
 # LLM output parsing
 # ============================================================
@@ -58,7 +70,6 @@ def clean_llm_output(text: str) -> str:
         return ""
 
     text = str(text)
-
     text = text.replace("```json", "")
     text = text.replace("```", "")
 
@@ -81,7 +92,6 @@ def extract_json_object(text: str) -> Optional[str]:
         return None
 
     text = str(text)
-
     start = text.find("{")
     end = text.rfind("}")
 
@@ -114,9 +124,7 @@ def extract_selected_indices(
     raw_text = str(llm_output)
     cleaned_output = clean_llm_output(raw_text)
 
-    possible_json_strings = []
-
-    possible_json_strings.append(cleaned_output)
+    possible_json_strings = [cleaned_output]
 
     extracted = extract_json_object(cleaned_output)
     if extracted is not None:
@@ -213,6 +221,43 @@ def complete_topk_indices(
     return results[:k]
 
 
+def parse_generated_question(raw_output: Optional[str], fallback_question: str) -> str:
+    """
+    Parse the LLM-generated natural language question.
+
+    Expected:
+        {"question": "..."}
+
+    Fallback:
+        Use the first non-empty line or fallback_question.
+    """
+
+    if raw_output is None:
+        return fallback_question
+
+    text = clean_llm_output(raw_output)
+
+    json_text = extract_json_object(text) or extract_json_object(raw_output)
+    if json_text:
+        try:
+            data = json.loads(json_text)
+            if isinstance(data, dict):
+                question = data.get("question") or data.get("query") or data.get("natural_language_question")
+                if question and str(question).strip():
+                    return str(question).strip()
+        except Exception:
+            pass
+
+    # Remove common prefixes and take the first useful line.
+    text = text.replace("Answer:", "").strip()
+    lines = [line.strip(" -\t\n\r\"'") for line in text.splitlines() if line.strip()]
+    for line in lines:
+        if "?" in line or len(line.split()) >= 4:
+            return line
+
+    return fallback_question
+
+
 # ============================================================
 # True tail map
 # ============================================================
@@ -294,7 +339,6 @@ class CandidateBuilder:
         self.random_seed = random_seed
 
         self.true_tail_map = build_true_tail_map(dataset)
-
         self.rng = random.Random(random_seed)
 
     def build_tail_candidates(
@@ -615,10 +659,84 @@ class CandidateBuilder:
 
 
 # ============================================================
-# Prompt
+# Prompt construction
 # ============================================================
 
+def split_camel_or_symbol_relation(relation_label: str) -> str:
+    """
+    A deterministic fallback verbalization for relation labels.
+    Examples:
+        hasMonthlyClimate -> has monthly climate
+        filmWrittenBy -> film written by
+        /people/person/place_of_birth -> people person place of birth
+    """
+
+    text = str(relation_label)
+    text = text.replace("/", " ")
+    text = text.replace("_", " ")
+    text = text.replace(".", " ")
+    text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", text)
+    text = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", text)
+    text = " ".join(text.split())
+    return text.lower() if text else str(relation_label)
+
+
+def build_question_generation_prompt(
+    head_label: str,
+    relation_label: str,
+    head_classes: List[str],
+    relation_domain: List[str],
+    relation_range: List[str],
+) -> str:
+    head_class_text = class_list_to_text(head_classes)
+    domain_text = class_list_to_text(relation_domain)
+    range_text = class_list_to_text(relation_range)
+    relation_text = split_camel_or_symbol_relation(relation_label)
+
+    prompt = f"""
+You are a knowledge graph query verbalization assistant.
+
+Your task is to convert a symbolic tail-prediction query into one natural-language question.
+
+Symbolic query:
+({head_label}, {relation_label}, ?)
+
+Known schema information:
+- Head entity: {head_label}
+- Head entity type: {head_class_text}
+- Relation label: {relation_label}
+- Relation verbalization hint: {relation_text}
+- Relation domain: {domain_text}
+- Expected tail entity type: {range_text}
+
+Requirements:
+- Generate one concise English question.
+- The question must ask for the missing tail entity.
+- The question must preserve the direction from head entity to tail entity.
+- Do not include candidate answers.
+- Do not answer the question.
+- Return only valid JSON.
+
+Output format:
+{{
+  "question": "..."
+}}
+
+""".strip()
+
+    return prompt
+
+
+def fallback_question(head_label: str, relation_label: str) -> str:
+    relation_text = split_camel_or_symbol_relation(relation_label)
+    return (
+        f'Given the head entity "{head_label}", which candidate entity best completes '
+        f'the relation "{relation_text}"?'
+    )
+
+
 def build_ranking_prompt(
+    generated_question: str,
     head_label: str,
     relation_label: str,
     head_classes: List[str],
@@ -628,88 +746,106 @@ def build_ranking_prompt(
     evidence_text: str,
     top_k: int = 10,
     use_evidence: bool = True,
-    include_rotate_score: bool = True,      # Kept for compatibility, not used in prompt.
-    include_candidate_class: bool = True,   # Kept for compatibility, not used in prompt.
+    include_rotate_score: bool = True,
+    include_candidate_class: bool = True,
 ) -> str:
     """
-    Build the LLM ranking prompt.
+    Build the final QA-style LLM ranking prompt.
 
-    Current prompt design:
-        1. No separate "Query information" section.
-        2. Expected tail entity type is inserted as the first key evidence sentence.
-        3. Candidate list only contains index and entity name.
-        4. Candidate class and RotatE score are not shown to LLM.
+    Design:
+        1. First use a generated natural-language question.
+        2. Attach expected tail type and key evidence.
+        3. Candidate list includes entity name, entity type, and RotatE score.
+        4. LLM returns ranked candidate indices only.
     """
 
-    indexed_candidates = "\n".join(
-        [
-            f"{cand['index']}. {cand['label']}"
-            for cand in candidates
-        ]
-    )
+    candidate_lines = []
+    for cand in candidates:
+        details = []
 
-    range_text = ", ".join(relation_range) if relation_range else "Unknown"
+        if include_candidate_class:
+            details.append(f"type: {class_list_to_text(cand.get('classes', []))}")
 
-    expected_type_evidence = (
-        f"The expected tail entity type should be {range_text}."
+        if include_rotate_score:
+            details.append(f"RotatE score: {float(cand.get('rotate_score', 0.0)):.4f}")
+
+        detail_text = "; ".join(details)
+        if detail_text:
+            candidate_lines.append(f"{cand['index']}. {cand['label']} ({detail_text})")
+        else:
+            candidate_lines.append(f"{cand['index']}. {cand['label']}")
+
+    indexed_candidates = "\n".join(candidate_lines)
+
+    head_class_text = class_list_to_text(head_classes)
+    domain_text = class_list_to_text(relation_domain)
+    range_text = class_list_to_text(relation_range)
+
+    expected_type_evidence = f"The expected tail entity type should be {range_text}."
+    head_type_evidence = f"The head entity {head_label} has type {head_class_text}."
+    relation_schema_evidence = (
+        f"The relation {relation_label} usually maps from domain type {domain_text} "
+        f"to range type {range_text}."
     )
 
     if use_evidence and evidence_text.strip():
-        evidence_lines = [
-            line.strip()
-            for line in evidence_text.splitlines()
-            if line.strip()
-        ]
-
+        evidence_lines = [line.strip() for line in evidence_text.splitlines() if line.strip()]
         cleaned_evidence_lines = []
         for line in evidence_lines:
             line = re.sub(r"^\d+\.\s*", "", line).strip()
             cleaned_evidence_lines.append(line)
 
-        all_evidence_lines = [expected_type_evidence] + cleaned_evidence_lines
-
+        all_evidence_lines = [
+            expected_type_evidence,
+            head_type_evidence,
+            relation_schema_evidence,
+        ] + cleaned_evidence_lines
     else:
         all_evidence_lines = [
             expected_type_evidence,
+            head_type_evidence,
+            relation_schema_evidence,
             "No additional structural evidence is provided.",
         ]
 
     key_evidence_text = "\n".join(
-        [
-            f"{idx}. {line}"
-            for idx, line in enumerate(all_evidence_lines, start=1)
-        ]
+        f"{idx}. {line}" for idx, line in enumerate(all_evidence_lines, start=1)
     )
 
     prompt = f"""
-You are an expert knowledge graph completion system.
+You are an expert knowledge graph question-answering and entity-ranking system.
 
-Your task is to rank candidate tail entities for a link prediction query.
+You will be given:
+1. A natural-language question converted from a knowledge graph query.
+2. Key evidence from the knowledge graph.
+3. A fixed list of candidate tail entities.
 
-Triple format:
-(head entity, relation, tail entity)
+Your task is to rank the candidate entities as answers to the question.
 
-Incomplete triple:
+Question:
+{generated_question}
+
+Original symbolic query:
 ({head_label}, {relation_label}, ?)
 
-Important:
-- You are predicting ONLY the tail entity.
+Important rules:
+- You are predicting ONLY the missing tail entity.
 - The head entity "{head_label}" is NOT a valid answer.
 - You MUST select exactly {top_k} candidate indices.
-- The indices must be ordered from MOST likely to LEAST likely.
-- You MUST NOT output entity names.
-- You MUST NOT generate new entities.
-- Output ONLY valid JSON.
-- Do NOT repeat indices.
-- All selected indices must come from the candidate list.
+- The selected indices must be ordered from MOST likely to LEAST likely.
+- You MUST only choose indices from the candidate list.
 - Candidate indices are 0-based.
+- Do NOT output entity names.
+- Do NOT generate new entities.
+- Do NOT repeat indices.
+- Return ONLY valid JSON.
+- Do NOT output reasoning.
 
-Before answering, internally:
-1. Understand the semantic meaning of the relation.
-2. Use the key evidence to understand the expected answer type and local graph neighborhood.
-3. Compare all candidates carefully.
-4. Select the TOP {top_k} most consistent candidates.
-Do NOT output reasoning.
+Use the following information carefully:
+- The natural-language question tells you what is being asked.
+- The key evidence provides local graph context and expected answer type.
+- Candidate entity types indicate semantic compatibility.
+- RotatE scores provide structural plausibility, but they are not always sufficient.
 
 Key evidence from the knowledge graph:
 {key_evidence_text}
@@ -726,6 +862,7 @@ Output format:
 """.strip()
 
     return prompt
+
 
 def print_candidate_debug_table(
     query_index: Any,
@@ -755,11 +892,10 @@ def print_candidate_debug_table(
         index = cand.get("index")
         entity_id = cand.get("entity_id")
         label = cand.get("label")
-        classes = cand.get("classes", [])
+        class_text = class_list_to_text(cand.get("classes", []))
         rotate_score = cand.get("rotate_score")
         is_gold = cand.get("is_gold", False)
 
-        class_text = ", ".join(classes) if classes else "Unknown"
         gold_mark = " <== GOLD / CORRECT" if is_gold else ""
 
         print(
@@ -767,7 +903,7 @@ def print_candidate_debug_table(
             f"id={entity_id} | "
             f"name={label} | "
             f"class=[{class_text}] | "
-            f"RotatE={rotate_score:.4f}"
+            f"RotatE={float(rotate_score):.4f}"
             f"{gold_mark}"
         )
 
@@ -887,11 +1023,13 @@ class LLMRankEvaluator:
         top_k: int = 10,
         use_evidence: bool = True,
         llm_enabled: bool = True,
+        use_query_verbalization: bool = True,
         include_rotate_score: bool = True,
         include_candidate_class: bool = True,
         fill_parse_failed_by_default_order: bool = True,
         save_prompt: bool = True,
         save_raw_output: bool = True,
+        save_question_prompt: bool = True,
         max_retries: int = 2,
         retry_sleep: float = 2.0,
         debug_print_prompt: bool = False,
@@ -910,6 +1048,7 @@ class LLMRankEvaluator:
 
         self.use_evidence = use_evidence
         self.llm_enabled = llm_enabled
+        self.use_query_verbalization = use_query_verbalization
 
         self.include_rotate_score = include_rotate_score
         self.include_candidate_class = include_candidate_class
@@ -917,6 +1056,7 @@ class LLMRankEvaluator:
 
         self.save_prompt = save_prompt
         self.save_raw_output = save_raw_output
+        self.save_question_prompt = save_question_prompt
 
         self.max_retries = max_retries
         self.retry_sleep = retry_sleep
@@ -925,7 +1065,6 @@ class LLMRankEvaluator:
         self.debug_print_candidates = debug_print_candidates
         self.debug_print_raw_output = debug_print_raw_output
         self.debug_print_prediction = debug_print_prediction
-        self.has_printed_debug = False
 
         self.schema = DatasetSchemaHelper(dataset)
         self.candidate_builder = CandidateBuilder(
@@ -982,7 +1121,30 @@ class LLMRankEvaluator:
             gold_tail_id=gold_tail_id,
         )
 
+        fallback_q = fallback_question(head_label, relation_label)
+        question_prompt = build_question_generation_prompt(
+            head_label=head_label,
+            relation_label=relation_label,
+            head_classes=head_classes,
+            relation_domain=relation_domain,
+            relation_range=relation_range,
+        )
+
+        if self.llm_enabled and self.use_query_verbalization:
+            generated_question_raw = self.query_llm_raw(
+                prompt=question_prompt,
+                system_prompt=(
+                    "You are a strict JSON-output knowledge graph query verbalization assistant. "
+                    "Return JSON only."
+                ),
+            )
+            generated_question = parse_generated_question(generated_question_raw, fallback_q)
+        else:
+            generated_question_raw = None
+            generated_question = fallback_q
+
         prompt = build_ranking_prompt(
+            generated_question=generated_question,
             head_label=head_label,
             relation_label=relation_label,
             head_classes=head_classes,
@@ -995,7 +1157,6 @@ class LLMRankEvaluator:
             include_rotate_score=self.include_rotate_score,
             include_candidate_class=self.include_candidate_class,
         )
-
 
         if self.debug_print_candidates:
             print_candidate_debug_table(
@@ -1010,10 +1171,25 @@ class LLMRankEvaluator:
 
         if self.debug_print_prompt:
             print("\n" + "=" * 100)
-            print("[Debug] Final prompt sent to LLM")
+            print("[Debug] Question verbalization prompt")
             print("=" * 100)
             print(f"Query index: {query_index}")
             print(f"Query: ({head_label}, {relation_label}, ?)")
+            print("-" * 100)
+            print(question_prompt)
+            print("=" * 100 + "\n")
+
+            print("\n" + "=" * 100)
+            print("[Debug] Generated question")
+            print("=" * 100)
+            print(f"Generated question: {generated_question}")
+            print(f"Raw verbalization output: {generated_question_raw}")
+            print("=" * 100 + "\n")
+
+            print("\n" + "=" * 100)
+            print("[Debug] Final ranking prompt sent to LLM")
+            print("=" * 100)
+            print(f"Query index: {query_index}")
             print(f"Correct entity: {gold_tail_label} | id={gold_tail_id}")
             print("-" * 100)
             print(prompt)
@@ -1026,11 +1202,14 @@ class LLMRankEvaluator:
             status = "default_candidate_order_only"
 
         else:
-            llm_raw_output = self.query_llm_raw(prompt)
+            llm_raw_output = self.query_llm_raw(
+                prompt=prompt,
+                system_prompt="You are a strict JSON-output knowledge graph QA ranker. Return JSON only.",
+            )
 
             if self.debug_print_raw_output:
                 print("\n" + "=" * 100)
-                print("[Debug] LLM raw output")
+                print("[Debug] Ranking LLM raw output")
                 print("=" * 100)
                 print(llm_raw_output)
                 print("=" * 100 + "\n")
@@ -1084,42 +1263,33 @@ class LLMRankEvaluator:
             "pred_indices_raw": pred_indices_raw,
             "pred_indices_final": pred_indices_final,
             "predicted_entity_ids": ranked_entity_ids,
-            "predicted_labels": [
-                item["label"]
-                for item in ranked_candidates
-            ],
+            "predicted_labels": [item["label"] for item in ranked_candidates],
+            "predicted_classes": [item.get("classes", []) for item in ranked_candidates],
         }
 
         if self.debug_print_prediction:
-            correct_classes = self.schema.entity_classes(gold_tail_id)
-            correct_class_text = ", ".join(correct_classes) if correct_classes else "Unknown"
-
             print("\n" + "=" * 100)
             print("[Debug] Prediction result")
             print("=" * 100)
             print(f"Query index: {query_index}")
-            print(f"Query: ({head_label}, {relation_label}, ?)")
-            print(
-                f"Correct entity: {gold_tail_label} | "
-                f"id={gold_tail_id} | "
-                f"class=[{correct_class_text}]"
-            )
+            print(f"Question: {generated_question}")
+            print(f"Original query: ({head_label}, {relation_label}, ?)")
+            print(f"Correct entity: {gold_tail_label} | id={gold_tail_id}")
+            print(f"Correct entity classes: {class_list_to_text(self.schema.entity_classes(gold_tail_id))}")
             print(f"Gold candidate index: {candidate_info.get('gold_candidate_index')}")
             print(f"Raw extracted indices: {pred_indices_raw}")
             print(f"Final used indices: {pred_indices_final}")
             print("\nPredicted entity sequence:")
 
             for rank_id, item in enumerate(ranked_candidates, start=1):
-                classes = item.get("classes", [])
-                class_text = ", ".join(classes) if classes else "Unknown"
                 mark = " <== CORRECT" if int(item["entity_id"]) == gold_tail_id else ""
-
                 print(
                     f"{rank_id}. "
                     f"candidate_index={item['index']} | "
                     f"id={item['entity_id']} | "
                     f"name={item['label']} | "
-                    f"class=[{class_text}]"
+                    f"class=[{class_list_to_text(item.get('classes', []))}] | "
+                    f"RotatE={float(item.get('rotate_score', 0.0)):.4f}"
                     f"{mark}"
                 )
 
@@ -1141,6 +1311,10 @@ class LLMRankEvaluator:
                 "relation": relation_label,
                 "tail": gold_tail_label,
             },
+
+            "generated_question": generated_question,
+            "generated_question_raw": generated_question_raw,
+            "question_prompt": question_prompt if self.save_question_prompt else None,
 
             "query_info": {
                 "head_classes": head_classes,
@@ -1167,6 +1341,7 @@ class LLMRankEvaluator:
             "evidence_text": evidence_text_for_prompt,
 
             "llm_enabled": self.llm_enabled,
+            "use_query_verbalization": self.use_query_verbalization,
             "llm_raw_output": llm_raw_output if self.save_raw_output else None,
             "extracted_result": extracted_result,
 
@@ -1202,19 +1377,16 @@ class LLMRankEvaluator:
 
         return result
 
-    def query_llm_raw(self, prompt: str) -> Optional[str]:
+    def query_llm_raw(self, prompt: str, system_prompt: str) -> Optional[str]:
         """
         Use the existing LLM_Model wrapper but keep raw content as much as possible.
-
-        This directly uses the OpenAI-compatible client inside LLM_Model,
-        because for debugging we need raw output before normalization.
         """
 
         if self.llm is None:
             return None
 
         messages = build_messages(
-            system_prompt="You are a strict JSON-output knowledge graph completion ranker. Return JSON only.",
+            system_prompt=system_prompt,
             user_prompt=prompt,
         )
 
@@ -1290,7 +1462,7 @@ def save_checkpoint(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="LLM ranking evaluation for OD-KGC."
+        description="LLM QA-style ranking evaluation for OD-KGC."
     )
 
     # Dataset and cache
@@ -1337,17 +1509,24 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--disable_rotate_score",
+        "--disable_query_verbalization",
         action="store_true",
         default=False,
-        help="Kept for compatibility. Current prompt does not show RotatE scores.",
+        help="Do not call LLM to verbalize the query. Use a deterministic generic question instead.",
+    )
+
+    parser.add_argument(
+        "--disable_rotate_score",
+        action="store_true",
+        default=True,
+        help="Do not show RotatE scores in candidate list.",
     )
 
     parser.add_argument(
         "--disable_candidate_class",
         action="store_true",
         default=False,
-        help="Kept for compatibility. Current prompt does not show candidate classes.",
+        help="Do not show candidate classes in candidate list.",
     )
 
     # LLM / baseline switch
@@ -1411,6 +1590,13 @@ def parse_args():
         help="Do not save raw LLM output in result json.",
     )
 
+    parser.add_argument(
+        "--no_save_question_prompt",
+        action="store_true",
+        default=False,
+        help="Do not save question verbalization prompt in result json.",
+    )
+
     return parser.parse_args()
 
 
@@ -1428,9 +1614,10 @@ def main():
 
     use_evidence = not args.disable_evidence
     llm_enabled = not args.rotate_only
+    use_query_verbalization = not args.disable_query_verbalization
 
     print("=" * 100)
-    print("[OD-KGC LLM Ranking Evaluation]")
+    print("[OD-KGC QA-style LLM Ranking Evaluation]")
     print("=" * 100)
     print(f"Dataset: {dataset_name}")
     print(f"Data path: {data_path}")
@@ -1441,6 +1628,7 @@ def main():
     print(f"Random seed: {args.random_seed}")
     print(f"Top K: {args.top_k}")
     print(f"Use evidence: {use_evidence}")
+    print(f"Use query verbalization: {use_query_verbalization}")
     print(f"LLM enabled: {llm_enabled}")
     print(f"LLM model: {args.llm_model}")
     print(f"OpenAI base URL: {args.openai_base_url}")
@@ -1498,11 +1686,13 @@ def main():
         top_k=args.top_k,
         use_evidence=use_evidence,
         llm_enabled=llm_enabled,
+        use_query_verbalization=use_query_verbalization,
         include_rotate_score=not args.disable_rotate_score,
         include_candidate_class=not args.disable_candidate_class,
         fill_parse_failed_by_default_order=not args.no_fill_parse_failed,
         save_prompt=not args.no_save_prompt,
         save_raw_output=not args.no_save_raw_output,
+        save_question_prompt=not args.no_save_question_prompt,
         max_retries=args.max_retries,
         retry_sleep=args.retry_sleep,
         debug_print_prompt=args.debug_print_prompt,
@@ -1520,14 +1710,15 @@ def main():
         "random_seed": args.random_seed,
         "top_k": args.top_k,
         "use_evidence": use_evidence,
+        "use_query_verbalization": use_query_verbalization,
         "llm_enabled": llm_enabled,
-        "prompt_candidate_format": "index_and_entity_name_only",
-        "prompt_expected_type_position": "first_key_evidence_sentence",
-        "include_rotate_score": False,
-        "include_candidate_class": False,
+        "prompt_style": "qa_question_with_evidence_candidate_type_and_rotate_score",
+        "include_rotate_score": not args.disable_rotate_score,
+        "include_candidate_class": not args.disable_candidate_class,
         "fill_parse_failed_by_default_order": not args.no_fill_parse_failed,
         "save_prompt": not args.no_save_prompt,
         "save_raw_output": not args.no_save_raw_output,
+        "save_question_prompt": not args.no_save_question_prompt,
         "llm_model": args.llm_model,
         "openai_base_url": args.openai_base_url,
         "max_items": args.max_items,
@@ -1537,7 +1728,7 @@ def main():
     results = []
 
     for idx, record in enumerate(
-        tqdm(compressed_records, desc="LLM Ranking", ncols=100),
+        tqdm(compressed_records, desc="LLM QA Ranking", ncols=100),
         start=1,
     ):
         try:
@@ -1571,25 +1762,21 @@ def main():
             print(f"Processed: {idx}/{len(compressed_records)}")
             print(f"Last status: {last.get('status')}")
             print(f"Last query: {last.get('query_triple_name')}")
+            print(f"Last generated question: {last.get('generated_question')}")
             print(f"Last pred raw: {last.get('pred_indices_raw')}")
             print(f"Last pred final: {last.get('pred_indices_final')}")
             print(f"Last rank: {last.get('rank')}")
-
             print("Last predicted entities:")
             for item in last.get("predicted_tails", []):
-                classes = item.get("classes", [])
-                class_text = ", ".join(classes) if classes else "Unknown"
                 mark = " <== CORRECT" if item.get("is_gold") else ""
-
                 print(
                     f"{item.get('rank')}. "
                     f"index={item.get('candidate_index')} | "
-                    f"id={item.get('entity_id')} | "
                     f"name={item.get('label')} | "
-                    f"class=[{class_text}]"
+                    f"class=[{class_list_to_text(item.get('classes', []))}] | "
+                    f"RotatE={float(item.get('rotate_score', 0.0)):.4f}"
                     f"{mark}"
                 )
-
             print("=" * 60)
 
     save_checkpoint(
@@ -1604,7 +1791,7 @@ def main():
     print("\n" + "=" * 100)
     print("[Final Metrics]")
     print("=" * 100)
-    print("[LLM Ranking]")
+    print("[LLM QA Ranking]")
     print(f"Total: {final_metrics['total']}")
     print(f"MRR: {final_metrics['MRR']:.4f}")
     print(f"Hit@1: {final_metrics['Hit@1']:.4f}")
