@@ -274,12 +274,12 @@ def save_checkpoint(output_path, results, hit1_count, hit3_count, hit10_count):
 
 def main():
 
-    entity_path = "/home/wenbin.guo/RAG/data/FB15k-237/entity.json"
-    relation_path = "/home/wenbin.guo/RAG/data/FB15k-237/relation.json"
-    triple_path = "/home/wenbin.guo/RAG/data/FB15k-237/test2id.txt"
+    entity_path = "/home/wenbin.guo/OD-KGC/data/FB15k-237/entity.json"
+    relation_path = "/home/wenbin.guo/OD-KGC/data/FB15k-237/relation.json"
+    triple_path = "/home/wenbin.guo/OD-KGC/data/FB15k-237/test2id.txt"
 
-    evidence_path = "/home/wenbin.guo/DKGE4R/data/FB15k-237/test_key_evidence.json"
-    output_path = "/home/wenbin.guo/DKGE4R/eval/eval_with_LP_results.json"
+    evidence_path = "/home/wenbin.guo/OD-KGC/data/FB15k-237/test_key_evidence.json"
+    output_path = "/home/wenbin.guo/OD-KGC/eval/eval_with_LP_results.json"
 
     entity_list = load_json(entity_path)
     relation_list = load_json(relation_path)
