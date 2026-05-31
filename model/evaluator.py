@@ -294,6 +294,70 @@ def build_true_tail_map(dataset) -> Dict[Tuple[int, int], Set[int]]:
     return true_tail_map
 
 
+def build_entity_relation_pattern_map(
+    dataset,
+    schema: DatasetSchemaHelper,
+    use_train: bool = True,
+    use_valid: bool = True,
+    use_test: bool = False,
+) -> Dict[int, Set[str]]:
+    """
+    Build one-hop neighborhood relation-pattern sets for each entity.
+
+    A pattern keeps relation direction:
+        - out:<relation_label> means entity --relation--> neighbor
+        - in:<relation_label> means neighbor --relation--> entity
+
+    By default this uses train + valid triples only and avoids test triples,
+    so the signal will not directly leak the test answer.
+    """
+
+    pattern_map: Dict[int, Set[str]] = {}
+    triples = []
+
+    if use_train and hasattr(dataset, "train_triples"):
+        triples.extend(dataset.train_triples)
+
+    if use_valid and hasattr(dataset, "valid_triples"):
+        triples.extend(dataset.valid_triples)
+
+    if use_test and hasattr(dataset, "test_triples"):
+        triples.extend(dataset.test_triples)
+
+    for tri in triples:
+        h = int(tri.h_id)
+        r = int(tri.r_id)
+        t = int(tri.t_id)
+        relation_label = schema.relation_label(r)
+
+        pattern_map.setdefault(h, set()).add(f"out:{relation_label}")
+        pattern_map.setdefault(t, set()).add(f"in:{relation_label}")
+
+    return pattern_map
+
+
+def relation_patterns_to_text(patterns: Any, max_patterns: int = 6) -> str:
+    """
+    Convert shared relation patterns into compact text for prompts/debugging.
+    """
+
+    if not patterns:
+        return "none"
+
+    values = sorted([str(x) for x in patterns if str(x).strip()])
+
+    if not values:
+        return "none"
+
+    shown = values[:max_patterns]
+    text = ", ".join(shown)
+
+    if len(values) > max_patterns:
+        text += f", ... (+{len(values) - max_patterns} more)"
+
+    return text
+
+
 # ============================================================
 # Candidate construction
 # ============================================================
@@ -339,7 +403,33 @@ class CandidateBuilder:
         self.random_seed = random_seed
 
         self.true_tail_map = build_true_tail_map(dataset)
+        self.entity_relation_patterns = build_entity_relation_pattern_map(
+            dataset=dataset,
+            schema=self.schema,
+            use_train=True,
+            use_valid=True,
+            use_test=False,
+        )
         self.rng = random.Random(random_seed)
+
+    def get_shared_relation_patterns(
+        self,
+        head_id: int,
+        candidate_entity_id: int,
+    ) -> List[str]:
+        """
+        Return one-hop relation patterns shared by the head entity and a candidate.
+
+        This is a candidate-aware structural signal. If a candidate and the head
+        share relation patterns such as out:locatedIn or in:contains, they may
+        be structurally similar or contextually related in the KG.
+        """
+
+        head_patterns = self.entity_relation_patterns.get(int(head_id), set())
+        candidate_patterns = self.entity_relation_patterns.get(int(candidate_entity_id), set())
+
+        shared = sorted(head_patterns.intersection(candidate_patterns))
+        return shared
 
     def build_tail_candidates(
         self,
@@ -457,6 +547,7 @@ class CandidateBuilder:
 
         candidates = self._format_candidates(
             items=sorted_items,
+            head_id=head_id,
             gold_tail_id=gold_tail_id,
             other_true_tails=pools["other_true_tails"],
         )
@@ -544,6 +635,7 @@ class CandidateBuilder:
 
         candidates = self._format_candidates(
             items=id_score_pairs,
+            head_id=head_id,
             gold_tail_id=gold_tail_id,
             other_true_tails=pools["other_true_tails"],
         )
@@ -570,6 +662,7 @@ class CandidateBuilder:
     def _format_candidates(
         self,
         items: List[Tuple[int, float]],
+        head_id: int,
         gold_tail_id: int,
         other_true_tails: Set[int],
     ) -> List[Dict[str, Any]]:
@@ -577,6 +670,11 @@ class CandidateBuilder:
         candidates = []
 
         for index, (entity_id, score) in enumerate(items):
+            shared_patterns = self.get_shared_relation_patterns(
+                head_id=head_id,
+                candidate_entity_id=int(entity_id),
+            )
+
             candidates.append(
                 {
                     "index": index,
@@ -586,6 +684,9 @@ class CandidateBuilder:
                     "rotate_score": float(score),
                     "is_gold": int(entity_id) == int(gold_tail_id),
                     "is_other_true_tail": int(entity_id) in other_true_tails,
+                    "shared_relation_patterns_with_head": shared_patterns,
+                    "shared_relation_pattern_count": len(shared_patterns),
+                    "shared_relation_pattern_text": relation_patterns_to_text(shared_patterns),
                 }
             )
 
@@ -722,6 +823,7 @@ Output format:
   "question": "..."
 }}
 
+/no_think
 """.strip()
 
     return prompt
@@ -769,6 +871,13 @@ def build_ranking_prompt(
         if include_rotate_score:
             details.append(f"RotatE score: {float(cand.get('rotate_score', 0.0)):.4f}")
 
+        shared_pattern_text = cand.get("shared_relation_pattern_text")
+        if shared_pattern_text is None:
+            shared_pattern_text = relation_patterns_to_text(
+                cand.get("shared_relation_patterns_with_head", [])
+            )
+        details.append(f"shared relation patterns with head: {shared_pattern_text}")
+
         detail_text = "; ".join(details)
         if detail_text:
             candidate_lines.append(f"{cand['index']}. {cand['label']} ({detail_text})")
@@ -787,6 +896,12 @@ def build_ranking_prompt(
         f"The relation {relation_label} usually maps from domain type {domain_text} "
         f"to range type {range_text}."
     )
+    shared_pattern_evidence = (
+        "For each candidate, shared relation patterns with the head are provided. "
+        "These patterns are one-hop incoming/outgoing relation labels that appear in both "
+        "the head entity neighborhood and the candidate entity neighborhood; use them as weak "
+        "structural compatibility evidence, not as the only decision rule."
+    )
 
     if use_evidence and evidence_text.strip():
         evidence_lines = [line.strip() for line in evidence_text.splitlines() if line.strip()]
@@ -799,12 +914,14 @@ def build_ranking_prompt(
             expected_type_evidence,
             head_type_evidence,
             relation_schema_evidence,
+            shared_pattern_evidence,
         ] + cleaned_evidence_lines
     else:
         all_evidence_lines = [
             expected_type_evidence,
             head_type_evidence,
             relation_schema_evidence,
+            shared_pattern_evidence,
             "No additional structural evidence is provided.",
         ]
 
@@ -846,6 +963,7 @@ Use the following information carefully:
 - The key evidence provides local graph context and expected answer type.
 - Candidate entity types indicate semantic compatibility.
 - RotatE scores provide structural plausibility, but they are not always sufficient.
+- Shared relation patterns with the head indicate whether a candidate has similar one-hop neighborhood relation patterns to the head; use this as weak structural evidence.
 
 Key evidence from the knowledge graph:
 {key_evidence_text}
@@ -1289,7 +1407,8 @@ class LLMRankEvaluator:
                     f"id={item['entity_id']} | "
                     f"name={item['label']} | "
                     f"class=[{class_list_to_text(item.get('classes', []))}] | "
-                    f"RotatE={float(item.get('rotate_score', 0.0)):.4f}"
+                    f"RotatE={float(item.get('rotate_score', 0.0)):.4f} | "
+                    f"shared_patterns=[{item.get('shared_relation_pattern_text', 'none')}]"
                     f"{mark}"
                 )
 
@@ -1356,6 +1475,9 @@ class LLMRankEvaluator:
                     "label": item["label"],
                     "classes": item.get("classes", []),
                     "rotate_score": item.get("rotate_score"),
+                    "shared_relation_patterns_with_head": item.get("shared_relation_patterns_with_head", []),
+                    "shared_relation_pattern_count": item.get("shared_relation_pattern_count", 0),
+                    "shared_relation_pattern_text": item.get("shared_relation_pattern_text", "none"),
                     "is_gold": item.get("is_gold", False),
                 }
                 for rank, item in enumerate(ranked_candidates)
@@ -1497,7 +1619,7 @@ def parse_args():
         ),
     )
     parser.add_argument("--candidate_size", type=int, default=20)
-    parser.add_argument("--random_seed", type=int, default=2026)
+    parser.add_argument("--random_seed", type=int, default=206)
     parser.add_argument("--top_k", type=int, default=10)
 
     # Evidence switch
@@ -1518,7 +1640,7 @@ def parse_args():
     parser.add_argument(
         "--disable_rotate_score",
         action="store_true",
-        default=True,
+        default=False,
         help="Do not show RotatE scores in candidate list.",
     )
 
@@ -1545,7 +1667,7 @@ def parse_args():
     )
 
     # Evaluation range
-    parser.add_argument("--max_items", type=int, default=20)
+    parser.add_argument("--max_items", type=int, default=1000)
     parser.add_argument("--start_index", type=int, default=0)
 
     # RotatE config
@@ -1571,10 +1693,10 @@ def parse_args():
     parser.add_argument("--save_every", type=int, default=20)
 
     # Debug output
-    parser.add_argument("--debug_print_prompt", action="store_true", default=True)
-    parser.add_argument("--debug_print_candidates", action="store_true", default=True)
-    parser.add_argument("--debug_print_raw_output", action="store_true", default=True)
-    parser.add_argument("--debug_print_prediction", action="store_true", default=True)
+    parser.add_argument("--debug_print_prompt", action="store_true", default=False)
+    parser.add_argument("--debug_print_candidates", action="store_true", default=False)
+    parser.add_argument("--debug_print_raw_output", action="store_true", default=False)
+    parser.add_argument("--debug_print_prediction", action="store_true", default=False)
 
     parser.add_argument(
         "--no_save_prompt",
@@ -1712,7 +1834,7 @@ def main():
         "use_evidence": use_evidence,
         "use_query_verbalization": use_query_verbalization,
         "llm_enabled": llm_enabled,
-        "prompt_style": "qa_question_with_evidence_candidate_type_and_rotate_score",
+        "prompt_style": "qa_question_with_evidence_candidate_type_rotate_score_and_shared_relation_patterns",
         "include_rotate_score": not args.disable_rotate_score,
         "include_candidate_class": not args.disable_candidate_class,
         "fill_parse_failed_by_default_order": not args.no_fill_parse_failed,
@@ -1774,7 +1896,8 @@ def main():
                     f"index={item.get('candidate_index')} | "
                     f"name={item.get('label')} | "
                     f"class=[{class_list_to_text(item.get('classes', []))}] | "
-                    f"RotatE={float(item.get('rotate_score', 0.0)):.4f}"
+                    f"RotatE={float(item.get('rotate_score', 0.0)):.4f} | "
+                    f"shared_patterns=[{item.get('shared_relation_pattern_text', 'none')}]"
                     f"{mark}"
                 )
             print("=" * 60)

@@ -1167,7 +1167,7 @@ def parse_args():
     parser.add_argument(
         "--mode",
         type=str,
-        default="auto",
+        default="train",
         choices=["auto", "train", "resume", "load", "test"],
         help=(
             "auto: load checkpoint if exists, otherwise train; "
@@ -1191,7 +1191,7 @@ def parse_args():
     parser.add_argument("--test_batch_size", type=int, default=16)
 
     parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--max_steps", type=int, default=150000)
+    parser.add_argument("--max_steps", type=int, default=30000)
     parser.add_argument("--warm_up_steps", type=int, default=None)
 
     parser.add_argument(
@@ -1218,9 +1218,9 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=2026)
 
     parser.add_argument("--log_steps", type=int, default=100)
-    parser.add_argument("--valid_steps", type=int, default=10000)
-    parser.add_argument("--save_checkpoint_steps", type=int, default=10000)
-    parser.add_argument("--test_log_steps", type=int, default=1000)
+    parser.add_argument("--valid_steps", type=int, default=2000)
+    parser.add_argument("--save_checkpoint_steps", type=int, default=1000)
+    parser.add_argument("--test_log_steps", type=int, default=2000)
 
     return parser.parse_args()
 

@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter, defaultdict, deque
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 
 # ============================================================
@@ -117,6 +118,26 @@ def safe_get_score(item: Dict[str, Any]) -> float:
         return float(item["score"])
 
     return 0.0
+
+
+def get_triple_fields(triple: Any) -> Tuple[int, int, int]:
+    """
+    Support dataclass-like triples, tuple/list triples, and dict triples.
+    """
+
+    if hasattr(triple, "h_id") and hasattr(triple, "r_id") and hasattr(triple, "t_id"):
+        return int(triple.h_id), int(triple.r_id), int(triple.t_id)
+
+    if isinstance(triple, (list, tuple)) and len(triple) >= 3:
+        return int(triple[0]), int(triple[1]), int(triple[2])
+
+    if isinstance(triple, dict):
+        h = triple.get("h_id", triple.get("head_id", triple.get("h")))
+        r = triple.get("r_id", triple.get("relation_id", triple.get("r")))
+        t = triple.get("t_id", triple.get("tail_id", triple.get("t")))
+        return int(h), int(r), int(t)
+
+    raise ValueError(f"Unsupported triple format: {triple}")
 
 
 # ============================================================
@@ -286,6 +307,135 @@ class DatasetSchemaHelper:
 
 
 # ============================================================
+# Conditional indirect gold-tail evidence
+# ============================================================
+
+class TwoHopGoldEvidenceFinder:
+    """
+    Search a two-hop indirect path from the query head to the gold tail.
+
+    The exact query triple:
+        head --[query_relation]--> gold_tail
+
+    is explicitly excluded. If no two-hop path is found, no evidence is added.
+    """
+
+    def __init__(self, dataset, schema: DatasetSchemaHelper):
+        self.dataset = dataset
+        self.schema = schema
+        self.undirected = self._build_undirected_graph()
+
+    def _build_undirected_graph(self):
+        undirected = defaultdict(list)
+
+        all_triples = []
+
+        if hasattr(self.dataset, "train_triples"):
+            all_triples.extend(self.dataset.train_triples)
+
+        if hasattr(self.dataset, "valid_triples"):
+            all_triples.extend(self.dataset.valid_triples)
+
+        if hasattr(self.dataset, "test_triples"):
+            all_triples.extend(self.dataset.test_triples)
+
+        for tri in all_triples:
+            h, r, t = get_triple_fields(tri)
+
+            # direction is relative to the current node used during search.
+            undirected[h].append((t, r, "out"))
+            undirected[t].append((h, r, "in"))
+
+        return undirected
+
+    def _path_to_text(
+        self,
+        path_edges: List[Tuple[int, int, int, str]],
+    ) -> str:
+        if not path_edges:
+            return ""
+
+        parts = [self.schema.entity_label(path_edges[0][0])]
+
+        for src, relation_id, dst, direction in path_edges:
+            relation_label = self.schema.relation_label(relation_id)
+            dst_label = self.schema.entity_label(dst)
+
+            if direction == "out":
+                parts.append(f"--[{relation_label}]-->")
+                parts.append(dst_label)
+            else:
+                parts.append(f"<--[{relation_label}]--")
+                parts.append(dst_label)
+
+        return " ".join(parts)
+
+    def find_two_hop_path(
+        self,
+        head_id: int,
+        query_relation_id: int,
+        gold_tail_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        head_id = int(head_id)
+        query_relation_id = int(query_relation_id)
+        gold_tail_id = int(gold_tail_id)
+
+        queue = deque()
+        queue.append((head_id, []))
+
+        while queue:
+            current, path_edges = queue.popleft()
+
+            if len(path_edges) >= 2:
+                continue
+
+            for neighbor, relation_id, direction in self.undirected.get(current, []):
+                neighbor = int(neighbor)
+                relation_id = int(relation_id)
+
+                # Exclude the exact query triple as evidence.
+                if (
+                    current == head_id
+                    and neighbor == gold_tail_id
+                    and relation_id == query_relation_id
+                    and direction == "out"
+                ):
+                    continue
+
+                # Avoid immediate cycles such as head -> x -> head.
+                if any(edge[0] == neighbor or edge[2] == neighbor for edge in path_edges):
+                    continue
+
+                new_edge = (current, relation_id, neighbor, direction)
+                new_path = path_edges + [new_edge]
+
+                # Only accept exactly two-hop paths ending at the gold tail.
+                if neighbor == gold_tail_id and len(new_path) == 2:
+                    text = self._path_to_text(new_path)
+
+                    return {
+                        "type": "conditional_indirect_gold_path",
+                        "text": text,
+                        "score": 1.0,
+                        "path_length": 2,
+                        "contains_gold_tail": True,
+                        "gold_tail_id": gold_tail_id,
+                        "gold_tail_label": self.schema.entity_label(gold_tail_id),
+                        "gold_tail_classes": self.schema.entity_classes(gold_tail_id),
+                        "note": (
+                            "Added because the RotatE candidate set is type-concentrated; "
+                            "this is a two-hop indirect path from the query head to the gold tail, "
+                            "excluding the exact query triple."
+                        ),
+                    }
+
+                if len(new_path) < 2:
+                    queue.append((neighbor, new_path))
+
+        return None
+
+
+# ============================================================
 # Evidence Compressor
 # ============================================================
 
@@ -321,6 +471,10 @@ class EvidenceCompressor:
         remove_duplicate_terminal: bool = True,
         remove_duplicate_relation_pattern: bool = True,
         include_score_in_text: bool = False,
+        rotate_manager: Optional[Any] = None,
+        enable_conditional_indirect_gold_evidence: bool = True,
+        candidate_size_for_type_check: int = 20,
+        type_concentration_threshold: float = 0.5,
     ):
         self.dataset = dataset
         self.schema = DatasetSchemaHelper(dataset)
@@ -337,6 +491,237 @@ class EvidenceCompressor:
         self.remove_duplicate_relation_pattern = remove_duplicate_relation_pattern
 
         self.include_score_in_text = include_score_in_text
+
+        self.rotate_manager = rotate_manager
+        self.enable_conditional_indirect_gold_evidence = enable_conditional_indirect_gold_evidence
+        self.candidate_size_for_type_check = candidate_size_for_type_check
+        self.type_concentration_threshold = type_concentration_threshold
+
+        self.true_tail_map = self._build_true_tail_map()
+        self.gold_evidence_finder = (
+            TwoHopGoldEvidenceFinder(dataset, self.schema)
+            if self.enable_conditional_indirect_gold_evidence
+            else None
+        )
+
+    # --------------------------------------------------------
+    # Candidate-set type concentration and conditional gold evidence
+    # --------------------------------------------------------
+
+    def _build_true_tail_map(self) -> Dict[Tuple[int, int], Set[int]]:
+        true_tail_map: Dict[Tuple[int, int], Set[int]] = {}
+
+        all_triples = []
+
+        if hasattr(self.dataset, "train_triples"):
+            all_triples.extend(self.dataset.train_triples)
+
+        if hasattr(self.dataset, "valid_triples"):
+            all_triples.extend(self.dataset.valid_triples)
+
+        if hasattr(self.dataset, "test_triples"):
+            all_triples.extend(self.dataset.test_triples)
+
+        for tri in all_triples:
+            h, r, t = get_triple_fields(tri)
+            true_tail_map.setdefault((h, r), set()).add(t)
+
+        return true_tail_map
+
+    def _get_primary_class(self, entity_id: int) -> str:
+        classes = self.schema.entity_classes(entity_id)
+
+        if not classes:
+            return "unknown"
+
+        return normalize_text(classes[0])
+
+    def _build_rotate_candidates_for_type_check(
+        self,
+        head_id: int,
+        relation_id: int,
+        gold_tail_id: Optional[int],
+    ) -> List[Dict[str, Any]]:
+        """
+        Build a 20-candidate set that follows the evaluator's hard-negative setting:
+            RotatE top-(N-1) negatives + current gold tail.
+
+        Other true tails of the same (head, relation) are removed.
+        This candidate set is only used to decide whether evidence should be augmented.
+        """
+
+        if self.rotate_manager is None or gold_tail_id is None:
+            return []
+
+        head_id = int(head_id)
+        relation_id = int(relation_id)
+        gold_tail_id = int(gold_tail_id)
+
+        all_entity_ids = set(int(eid) for eid in self.dataset.entities.keys())
+
+        all_true_tails = set(self.true_tail_map.get((head_id, relation_id), set()))
+        other_true_tails = set(all_true_tails)
+        other_true_tails.discard(gold_tail_id)
+
+        candidate_pool = set(all_entity_ids)
+        candidate_pool -= other_true_tails
+
+        if head_id in candidate_pool:
+            candidate_pool.remove(head_id)
+
+        negative_pool = set(candidate_pool)
+        if gold_tail_id in negative_pool:
+            negative_pool.remove(gold_tail_id)
+
+        scored_negatives = self.rotate_manager.score_tail_candidates(
+            head_id=head_id,
+            relation_id=relation_id,
+            candidate_tail_ids=sorted(list(negative_pool)),
+        )
+
+        num_negatives = max(0, self.candidate_size_for_type_check - 1)
+        selected_negatives = scored_negatives[:num_negatives]
+
+        candidate_score_dict = {
+            int(eid): float(score)
+            for eid, score in selected_negatives
+        }
+
+        gold_score = float(
+            self.rotate_manager.score_triples(
+                [(head_id, relation_id, gold_tail_id)]
+            )[0]
+        )
+        candidate_score_dict[gold_tail_id] = gold_score
+
+        sorted_items = sorted(
+            candidate_score_dict.items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )[: self.candidate_size_for_type_check]
+
+        candidates = []
+
+        for rank, (entity_id, score) in enumerate(sorted_items):
+            candidates.append(
+                {
+                    "rank": rank + 1,
+                    "entity_id": int(entity_id),
+                    "label": self.schema.entity_label(entity_id),
+                    "classes": self.schema.entity_classes(entity_id),
+                    "primary_class": self._get_primary_class(entity_id),
+                    "rotate_score": float(score),
+                    "is_gold": int(entity_id) == gold_tail_id,
+                }
+            )
+
+        return candidates
+
+    def _candidate_type_concentration(
+        self,
+        rotate_candidates: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not rotate_candidates:
+            return {
+                "is_type_concentrated": False,
+                "max_class": None,
+                "max_class_count": 0,
+                "candidate_size": 0,
+                "threshold_count": None,
+                "class_counts": {},
+            }
+
+        class_counter = Counter(
+            item.get("primary_class", "unknown")
+            for item in rotate_candidates
+        )
+
+        max_class, max_count = class_counter.most_common(1)[0]
+        candidate_size = len(rotate_candidates)
+
+        threshold_count = max(
+            1,
+            int(candidate_size * self.type_concentration_threshold),
+        )
+
+        is_type_concentrated = max_count >= threshold_count
+
+        return {
+            "is_type_concentrated": is_type_concentrated,
+            "max_class": max_class,
+            "max_class_count": max_count,
+            "candidate_size": candidate_size,
+            "threshold_count": threshold_count,
+            "class_counts": dict(class_counter),
+        }
+
+    def _maybe_build_conditional_indirect_gold_evidence(
+        self,
+        head_id: int,
+        relation_id: int,
+        gold_tail_id: Optional[int],
+    ) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+        """
+        If the RotatE candidate set is type-concentrated, try to add a two-hop
+        indirect path that contains the gold tail. If no such path exists, add nothing.
+        """
+
+        stats = {
+            "enabled": self.enable_conditional_indirect_gold_evidence,
+            "checked": False,
+            "triggered_by_type_concentration": False,
+            "added": False,
+            "reason": "",
+            "candidate_type_concentration": None,
+        }
+
+        if not self.enable_conditional_indirect_gold_evidence:
+            stats["reason"] = "disabled"
+            return None, stats
+
+        if self.rotate_manager is None:
+            stats["reason"] = "rotate_manager_is_none"
+            return None, stats
+
+        if gold_tail_id is None:
+            stats["reason"] = "gold_tail_id_is_none"
+            return None, stats
+
+        stats["checked"] = True
+
+        rotate_candidates = self._build_rotate_candidates_for_type_check(
+            head_id=head_id,
+            relation_id=relation_id,
+            gold_tail_id=gold_tail_id,
+        )
+
+        concentration = self._candidate_type_concentration(rotate_candidates)
+        stats["candidate_type_concentration"] = concentration
+
+        if not concentration.get("is_type_concentrated", False):
+            stats["reason"] = "candidate_set_not_type_concentrated"
+            return None, stats
+
+        stats["triggered_by_type_concentration"] = True
+
+        if self.gold_evidence_finder is None:
+            stats["reason"] = "gold_evidence_finder_is_none"
+            return None, stats
+
+        evidence = self.gold_evidence_finder.find_two_hop_path(
+            head_id=head_id,
+            query_relation_id=relation_id,
+            gold_tail_id=gold_tail_id,
+        )
+
+        if evidence is None:
+            stats["reason"] = "two_hop_indirect_gold_path_not_found"
+            return None, stats
+
+        stats["added"] = True
+        stats["reason"] = "two_hop_indirect_gold_path_added"
+
+        return evidence, stats
 
     # --------------------------------------------------------
     # Public API
@@ -386,6 +771,19 @@ class EvidenceCompressor:
         candidates = self.build_candidate_evidence(evidence)
         selected = self.greedy_select(candidates)
 
+        conditional_gold_evidence, conditional_gold_stats = (
+            self._maybe_build_conditional_indirect_gold_evidence(
+                head_id=query_head_id,
+                relation_id=query_relation_id,
+                gold_tail_id=gold_tail_id,
+            )
+        )
+
+        if conditional_gold_evidence is not None:
+            # Insert as the first key evidence. This is intentionally added after
+            # greedy compression, so it does not replace the original top evidence.
+            selected = [conditional_gold_evidence] + selected
+
         evidence_text = self.build_evidence_text(selected)
 
         record = {
@@ -434,6 +832,9 @@ class EvidenceCompressor:
                 "remove_duplicate_text": self.remove_duplicate_text,
                 "remove_duplicate_terminal": self.remove_duplicate_terminal,
                 "remove_duplicate_relation_pattern": self.remove_duplicate_relation_pattern,
+                "enable_conditional_indirect_gold_evidence": self.enable_conditional_indirect_gold_evidence,
+                "candidate_size_for_type_check": self.candidate_size_for_type_check,
+                "type_concentration_threshold": self.type_concentration_threshold,
             },
 
             "key_evidence": selected,
@@ -445,6 +846,7 @@ class EvidenceCompressor:
                 "num_candidate_evidence": len(candidates),
                 "num_selected_evidence": len(selected),
                 "estimated_tokens": approx_token_len(evidence_text),
+                "conditional_indirect_gold_evidence": conditional_gold_stats,
             },
         }
 
@@ -703,7 +1105,7 @@ class EvidenceCompressor:
 
         for idx, item in enumerate(selected, start=1):
             evidence_type = item.get("type", "evidence")
-            score = item.get("score", 0.0)
+            score = float(item.get("score", 0.0))
             text = item.get("text", "")
 
             lines.append(
@@ -876,6 +1278,7 @@ def load_or_build_filtered_evidence(
 
 def load_or_build_compressed_evidence(
     dataset,
+    data_path: Path,
     dataset_name: str,
     import_root: Path,
     split: str,
@@ -888,6 +1291,11 @@ def load_or_build_compressed_evidence(
     keep_one_hop: bool,
     keep_paths: bool,
     include_score_in_text: bool,
+    enable_conditional_indirect_gold_evidence: bool,
+    candidate_size_for_type_check: int,
+    type_concentration_threshold: float,
+    cuda: bool,
+    gpu_id: int,
 ) -> List[Dict[str, Any]]:
     compressed_path = (
         import_root
@@ -902,6 +1310,20 @@ def load_or_build_compressed_evidence(
 
     print("[EvidenceCompressor] Building compressed key evidence...")
 
+    rotate_manager = None
+
+    if enable_conditional_indirect_gold_evidence:
+        print("[EvidenceCompressor] Loading RotatE for candidate type-concentration check...")
+        rotate_manager = get_or_train_rotate(
+            data_path=str(data_path),
+            import_path=str(import_root / "KGE_model"),
+            dataset_name=dataset_name,
+            load_if_exists=True,
+            force_train=False,
+            cuda=cuda,
+            gpu_id=gpu_id,
+        )
+
     compressor = EvidenceCompressor(
         dataset=dataset,
         max_evidence_num=max_evidence_num,
@@ -913,6 +1335,10 @@ def load_or_build_compressed_evidence(
         remove_duplicate_terminal=True,
         remove_duplicate_relation_pattern=True,
         include_score_in_text=include_score_in_text,
+        rotate_manager=rotate_manager,
+        enable_conditional_indirect_gold_evidence=enable_conditional_indirect_gold_evidence,
+        candidate_size_for_type_check=candidate_size_for_type_check,
+        type_concentration_threshold=type_concentration_threshold,
     )
 
     compressed = compressor.compress_evidence_list(filtered_evidence)
@@ -1052,6 +1478,34 @@ def parse_args():
     parser.add_argument("--include_score_in_text", action="store_true", default=False)
 
     parser.add_argument(
+        "--enable_conditional_indirect_gold_evidence",
+        action="store_true",
+        default=True,
+        help=(
+            "If RotatE top-N candidates are type-concentrated, add one two-hop "
+            "indirect path containing the gold tail when such a path exists."
+        ),
+    )
+    parser.add_argument(
+        "--disable_conditional_indirect_gold_evidence",
+        dest="enable_conditional_indirect_gold_evidence",
+        action="store_false",
+        help="Disable conditional two-hop indirect gold-tail evidence augmentation.",
+    )
+    parser.add_argument(
+        "--candidate_size_for_type_check",
+        type=int,
+        default=20,
+        help="RotatE candidate size used for type-concentration detection.",
+    )
+    parser.add_argument(
+        "--type_concentration_threshold",
+        type=float,
+        default=0.5,
+        help="Trigger when the largest candidate class count is >= candidate_size * threshold.",
+    )
+
+    parser.add_argument(
         "--only_one_hop",
         action="store_true",
         default=False,
@@ -1138,6 +1592,7 @@ def main():
 
     compressed = load_or_build_compressed_evidence(
         dataset=dataset,
+        data_path=data_path,
         dataset_name=dataset_name,
         import_root=import_root,
         split=args.split,
@@ -1150,6 +1605,11 @@ def main():
         keep_one_hop=keep_one_hop,
         keep_paths=keep_paths,
         include_score_in_text=args.include_score_in_text,
+        enable_conditional_indirect_gold_evidence=args.enable_conditional_indirect_gold_evidence,
+        candidate_size_for_type_check=args.candidate_size_for_type_check,
+        type_concentration_threshold=args.type_concentration_threshold,
+        cuda=args.cuda,
+        gpu_id=args.gpu_id,
     )
 
     if compressed:
