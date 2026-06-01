@@ -1,5 +1,3 @@
-# OD-KGC/src/kg_loader.py
-
 from __future__ import annotations
 
 import argparse
@@ -69,7 +67,6 @@ class KGLoader:
     Expected files:
         entity.json
         relation.json
-        relation_new.json  optional
         train2id.txt       optional
         valid2id.txt       optional
         test2id.txt        required for testing

@@ -1,5 +1,3 @@
-# OD-KGC/model/KGE_model.py
-
 from __future__ import annotations
 
 import argparse
@@ -18,10 +16,6 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
 
-# ======================================================================
-# Make sure this file can import src/kg_loader.py when executed directly
-# ======================================================================
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
@@ -30,10 +24,6 @@ from src.kg_loader import KGLoader
 
 TripleID = Tuple[int, int, int]  # (head_id, relation_id, tail_id)
 
-
-# ======================================================================
-# Basic utilities
-# ======================================================================
 
 def set_seed(seed: int = 2026) -> None:
     random.seed(seed)
@@ -74,13 +64,9 @@ def setup_logger(log_file: Path) -> None:
     logger.addHandler(file_handler)
 
 
-# ======================================================================
-# Config
-# ======================================================================
-
 @dataclass
 class RotatEConfig:
-    data_path: str = "data/WN18RR"
+    data_path: str = "dataset/WN18RR"
     import_path: str = "import/KGE_model"
     dataset_name: Optional[str] = None
     checkpoint_dir: Optional[str] = None
@@ -117,24 +103,7 @@ class RotatEConfig:
     nrelation: int = 0
 
 
-# ======================================================================
-# Data wrapper based on src/kg_loader.py
-# ======================================================================
-
 class KGEData:
-    """
-    This class reuses src/kg_loader.py.
-
-    kg_loader.py is responsible for reading:
-        entity.json
-        relation.json
-        train2id.txt
-        valid2id.txt
-        test2id.txt
-
-    This wrapper only converts loaded triples into RotatE format:
-        (head_id, relation_id, tail_id)
-    """
 
     def __init__(self, data_path: str | Path):
         self.data_path = Path(data_path)
@@ -197,10 +166,6 @@ class KGEData:
 
         return max_id + 1
 
-
-# ======================================================================
-# Training dataset
-# ======================================================================
 
 class TrainDataset(Dataset):
     def __init__(
@@ -317,10 +282,6 @@ class TrainDataset(Dataset):
         return true_head, true_tail
 
 
-# ======================================================================
-# Test dataset
-# ======================================================================
-
 class TestDataset(Dataset):
     def __init__(
         self,
@@ -400,10 +361,6 @@ class BidirectionalOneShotIterator:
             for data in dataloader:
                 yield data
 
-
-# ======================================================================
-# RotatE model
-# ======================================================================
 
 class RotatEModel(nn.Module):
     def __init__(
@@ -549,10 +506,6 @@ class RotatEModel(nn.Module):
 
         return self.gamma.item() - score.sum(dim=2)
 
-
-# ======================================================================
-# RotatE manager
-# ======================================================================
 
 class RotatEManager:
     def __init__(self, config: RotatEConfig):
@@ -1075,10 +1028,6 @@ class RotatEManager:
             logging.info("%s %s at step %d: %.6f", mode, key, step, value)
 
 
-# ======================================================================
-# Public APIs for other modules
-# ======================================================================
-
 def get_or_train_rotate(
     data_path: str = "data/WN18RR",
     import_path: str = "import/KGE_model",
@@ -1136,10 +1085,7 @@ def load_trained_rotate(
     checkpoint_dir: Optional[str] = None,
     **kwargs,
 ) -> RotatEManager:
-    """
-    Load an existing trained RotatE model only.
-    If checkpoint does not exist, it raises FileNotFoundError.
-    """
+
 
     config = RotatEConfig(
         data_path=data_path,
@@ -1155,9 +1101,6 @@ def load_trained_rotate(
     return manager
 
 
-# ======================================================================
-# CLI
-# ======================================================================
 
 def parse_args():
     parser = argparse.ArgumentParser(

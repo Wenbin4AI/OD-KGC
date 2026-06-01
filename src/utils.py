@@ -1,5 +1,3 @@
-# OD-KGC/src/utils.py
-
 from __future__ import annotations
 
 import json
@@ -86,50 +84,19 @@ def extract_after_answer(text: str) -> str:
 
 
 def clean_raw_llm_output(text: str) -> str:
-    """
-    Minimal cleanup for raw LLM output.
-
-    This preserves JSON punctuation such as:
-        [], {}, "", commas, colons
-
-    Use this for:
-        - entity class inference
-        - JSON list output
-        - candidate index output
-    """
-
     text = extract_after_answer(text)
     text = remove_thinking_tags(text)
     return text.strip()
 
 
 def clean_final_answer(text: str) -> str:
-    """
-    Strong cleanup for final textual answers.
-
-    This will normalize punctuation and case, so do not use it for JSON.
-    """
-
     text = clean_raw_llm_output(text)
     text = normalize_answer(text)
     return text
 
 
-# ============================================================
-# JSON helpers
-# ============================================================
 
 def safe_json_loads(text: str, default: Any = None) -> Any:
-    """
-    Try to parse JSON from LLM output.
-
-    It supports outputs like:
-        ```json
-        [...]
-        ```
-    or text containing a JSON object/list.
-    """
-
     if default is None:
         default = None
 
@@ -212,9 +179,6 @@ def build_messages(
     user_prompt: str,
     system_prompt: Optional[str] = None,
 ) -> Messages:
-    """
-    Build standard OpenAI chat messages.
-    """
 
     messages: Messages = []
 
@@ -241,27 +205,6 @@ def build_messages(
 # ============================================================
 
 class LLM_Model:
-    """
-    OpenAI-compatible LLM client.
-
-    This class does NOT read OPENAI_API_KEY or OPENAI_BASE_URL from env.
-    You must pass them explicitly.
-
-    It supports:
-        - OpenAI official API
-        - vLLM OpenAI-compatible API
-        - other OpenAI-compatible local servers
-
-    Example:
-        llm = LLM_Model(
-            llm_model="Qwen/Qwen2.5-7B-Instruct",
-            openai_api_key="EMPTY",
-            openai_base_url="http://localhost:8000/v1",
-        )
-
-        messages = build_messages("Please answer yes or no.")
-        answer = llm.infer(messages)
-    """
 
     def __init__(
         self,
@@ -335,18 +278,6 @@ class LLM_Model:
         messages: Messages,
         **kwargs,
     ) -> str:
-        """
-        Return the raw model output with minimal cleanup.
-
-        This function preserves JSON punctuation such as:
-            [], {}, "", commas, colons
-
-        Use this for:
-            - entity class inference
-            - ontology class list generation
-            - candidate index prediction
-            - JSON-formatted outputs
-        """
 
         request_config = dict(self.llm_config)
         request_config.update(kwargs)
@@ -368,12 +299,6 @@ class LLM_Model:
         messages: Messages,
         **kwargs,
     ) -> str:
-        """
-        Return normalized final answer.
-
-        This function removes punctuation and lowercases text.
-        Do NOT use this if you need JSON or candidate index format.
-        """
 
         content = self.infer_raw(messages, **kwargs)
         return normalize_answer(content)
@@ -383,14 +308,6 @@ class LLM_Model:
         messages: Messages,
         **kwargs,
     ) -> str:
-        """
-        Return cleaned natural language text without answer normalization.
-
-        Compared with infer():
-            - keeps punctuation
-            - keeps capitalization
-            - removes only thinking tags and 'Answer:' prefix
-        """
 
         return self.infer_raw(messages, **kwargs)
 
@@ -400,11 +317,6 @@ class LLM_Model:
         default: Any = None,
         **kwargs,
     ) -> Any:
-        """
-        Ask the LLM and parse output as JSON.
-
-        If parsing fails, return default.
-        """
 
         content = self.infer_raw(messages, **kwargs)
         return safe_json_loads(content, default=default)
@@ -415,11 +327,6 @@ class LLM_Model:
         default: Optional[int] = None,
         **kwargs,
     ) -> Optional[int]:
-        """
-        Extract a single integer index from LLM output.
-
-        Useful for indexed candidate ranking.
-        """
 
         content = self.infer_raw(messages, **kwargs)
 
@@ -434,11 +341,6 @@ class LLM_Model:
         messages: Messages,
         **kwargs,
     ) -> List[int]:
-        """
-        Extract multiple integer indices from LLM output.
-
-        Useful if the model returns a ranked candidate list.
-        """
 
         content = self.infer_raw(messages, **kwargs)
         return [int(x) for x in re.findall(r"-?\d+", content)]
@@ -458,7 +360,7 @@ if __name__ == "__main__":
     # Example for local vLLM OpenAI-compatible server.
     # Change these according to your environment.
     llm = LLM_Model(
-        llm_model="/home/wenbin.guo/.cache/modelscope/hub/models/Qwen/Qwen3-8B",
+        llm_model="Qwen/Qwen3-8B",
         openai_api_key="EMPTY",
         openai_base_url="http://localhost:22014/v1",
         max_tokens=512,

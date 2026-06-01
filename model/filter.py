@@ -1,5 +1,3 @@
-# OD-KGC/model/ontology_filter.py
-
 from __future__ import annotations
 
 import argparse
@@ -1376,7 +1374,7 @@ def parse_args():
         description="Ontology-constrained filtering for OD-KGC evidence."
     )
 
-    parser.add_argument("--data_path", type=str, default="data/FB15k-237")
+    parser.add_argument("--data_path", type=str, default="dataset/FB15k-237")
     parser.add_argument("--dataset_name", type=str, default=None)
 
     parser.add_argument("--input_evidence_path", type=str, default=None)
@@ -1386,7 +1384,7 @@ def parse_args():
     parser.add_argument(
         "--filter_mode",
         type=str,
-        default="precise",
+        default="no_llm",
         choices=["precise", "fast_query", "no_llm"],
         help=(
             "precise: cache + parallel class-pair LLM judgments; "
