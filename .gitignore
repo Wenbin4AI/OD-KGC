@@ -5,7 +5,6 @@ __pycache__/
 results/
 .env
 .venv
-dataset/
 import/
 eval/eval_with_LP_results.json
 scripts/
