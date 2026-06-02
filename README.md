@@ -24,17 +24,9 @@ The framework extracts structural evidence from knowledge graphs, calibrates evi
 
 ---
 
-## Framework
-
-Please place the framework figure at:
-
-```text
-assets/framework.pdf
-```
-
 Then it will be displayed automatically:
 
-![OD-KGC Framework](assets/framework.pdf)
+![OD-KGC Framework](assets/framework.png)
 
 ---
 
