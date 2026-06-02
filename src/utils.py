@@ -9,6 +9,153 @@ from typing import Any, Dict, List, Optional, Union
 import httpx
 from openai import OpenAI
 
+from typing import Any, Dict, List, Set, Tuple
+import random
+
+class CandidateBuilder:
+    def __init__(
+        self,
+        dataset,
+        rotate_manager,
+        candidate_size: int = 20,
+        candidate_mode: str = "filtered_rotate",
+        exclude_head: bool = True,
+        random_seed: int = 2026,
+    ):
+        if candidate_mode not in {"filtered_rotate", "random"}:
+            raise ValueError("candidate_mode must be filtered_rotate or random.")
+
+        self.dataset = dataset
+        self.rotate = rotate_manager
+        self.candidate_size = candidate_size
+        self.candidate_mode = candidate_mode
+        self.exclude_head = exclude_head
+        self.random_seed = random_seed
+        self.true_tail_map = self._build_true_tail_map(dataset)
+
+    def _build_true_tail_map(self, dataset) -> Dict[Tuple[int,int],Set[int]]:
+        true_tail_map: Dict[Tuple[int,int],Set[int]] = {}
+        all_triples = []
+        for attr in ["train_triples", "valid_triples", "test_triples"]:
+            if hasattr(dataset, attr):
+                all_triples.extend(getattr(dataset, attr))
+        for tri in all_triples:
+            h = int(tri.h_id)
+            r = int(tri.r_id)
+            t = int(tri.t_id)
+            true_tail_map.setdefault((h,r),set()).add(t)
+        return true_tail_map
+
+    def build_tail_candidates(
+        self,
+        head_id: int,
+        relation_id: int,
+        gold_tail_id: int,
+        query_index: int = None,
+    ) -> Tuple[List[Dict[str,Any]], Dict[str,Any]]:
+        if self.candidate_mode == "filtered_rotate":
+            return self._build_filtered_rotate_candidates(head_id, relation_id, gold_tail_id)
+        else:
+            return self._build_random_candidates(head_id, relation_id, gold_tail_id, query_index)
+
+    def _prepare_pools(
+        self,
+        head_id: int,
+        relation_id: int,
+        gold_tail_id: int,
+    ) -> Dict[str,Any]:
+        all_entity_ids = set(int(eid) for eid in self.dataset.entities.keys())
+        all_true_tails = set(self.true_tail_map.get((head_id, relation_id), set()))
+        other_true_tails = all_true_tails.copy()
+        other_true_tails.discard(gold_tail_id)
+        candidate_pool = all_entity_ids - other_true_tails
+        if self.exclude_head and head_id in candidate_pool:
+            candidate_pool.remove(head_id)
+        negative_pool = candidate_pool.copy()
+        negative_pool.discard(gold_tail_id)
+        return {"all_true_tails": all_true_tails,
+                "other_true_tails": other_true_tails,
+                "candidate_pool": candidate_pool,
+                "negative_pool": negative_pool}
+
+    def _build_filtered_rotate_candidates(
+        self,
+        head_id:int,
+        relation_id:int,
+        gold_tail_id:int
+    ) -> Tuple[List[Dict[str,Any]], Dict[str,Any]]:
+        head_id = int(head_id)
+        relation_id = int(relation_id)
+        gold_tail_id = int(gold_tail_id)
+        pools = self._prepare_pools(head_id,relation_id,gold_tail_id)
+        negative_pool_list = sorted(list(pools["negative_pool"]))
+        scored_negatives = self.rotate.score_tail_candidates(head_id,relation_id,negative_pool_list)
+        num_negatives = max(0,self.candidate_size-1)
+        selected_negatives = scored_negatives[:num_negatives]
+        score_dict = {int(eid):float(score) for eid,score in selected_negatives}
+        gold_score = float(self.rotate.score_triples([(head_id,relation_id,gold_tail_id)])[0])
+        score_dict[gold_tail_id] = gold_score
+        sorted_items = sorted(score_dict.items(),key=lambda x:x[1],reverse=True)[:self.candidate_size]
+        candidates = self._format_candidates(sorted_items,gold_tail_id,pools["other_true_tails"])
+        info = {"candidate_mode":"filtered_rotate",
+                "candidate_size":len(candidates),
+                "gold_tail_id":gold_tail_id,
+                "gold_candidate_index":next(i for i,item in enumerate(candidates) if item["is_gold"]),
+                "gold_rotate_score":gold_score,
+                "num_all_true_tails_for_query":len(pools["all_true_tails"]),
+                "num_filtered_other_true_tails":len(pools["other_true_tails"]),
+                "num_negative_pool":len(pools["negative_pool"])}
+        return candidates, info
+
+    def _build_random_candidates(
+        self,
+        head_id:int,
+        relation_id:int,
+        gold_tail_id:int,
+        query_index:int=None
+    ) -> Tuple[List[Dict[str,Any]], Dict[str,Any]]:
+        head_id = int(head_id)
+        relation_id = int(relation_id)
+        gold_tail_id = int(gold_tail_id)
+        pools = self._prepare_pools(head_id,relation_id,gold_tail_id)
+        negative_pool = sorted(list(pools["negative_pool"]))
+        num_negatives = max(0,self.candidate_size-1)
+        seed = self.random_seed if query_index is None else self.random_seed+int(query_index)
+        rng = random.Random(seed)
+        if len(negative_pool)<num_negatives:
+            negatives=list(negative_pool)
+        else:
+            negatives=rng.sample(negative_pool,num_negatives)
+        candidate_ids = negatives+[gold_tail_id]
+        rng = random.Random(seed+999999)
+        rng.shuffle(candidate_ids)
+        triples=[(head_id,relation_id,int(eid)) for eid in candidate_ids]
+        scores=self.rotate.score_triples(triples)
+        items=[(int(eid),float(score)) for eid,score in zip(candidate_ids,scores)]
+        gold_score = next((score for eid,score in items if eid==gold_tail_id), None)
+        candidates = self._format_candidates(items,gold_tail_id,pools["other_true_tails"])
+        info = {"candidate_mode":"random",
+                "candidate_size":len(candidates),
+                "gold_tail_id":gold_tail_id,
+                "gold_candidate_index":next(i for i,item in enumerate(candidates) if item["is_gold"]),
+                "gold_rotate_score":gold_score,
+                "num_all_true_tails_for_query":len(pools["all_true_tails"]),
+                "num_filtered_other_true_tails":len(pools["other_true_tails"]),
+                "num_negative_pool":len(pools["negative_pool"])}
+        return candidates, info
+
+    def _format_candidates(self,items:List[Tuple[int,float]],gold_tail_id:int,other_true_tails:Set[int])->List[Dict[str,Any]]:
+        candidates=[]
+        for idx,(entity_id,score) in enumerate(items):
+            candidates.append({"index":idx,
+                               "entity_id":int(entity_id),
+                               "label":str(self.dataset.entities[int(entity_id)].label),
+                               "classes":[],
+                               "rotate_score":score,
+                               "is_gold":int(entity_id)==int(gold_tail_id),
+                               "is_other_true_tail":int(entity_id) in other_true_tails})
+        return candidates
+
 
 Message = Dict[str, str]
 Messages = List[Message]

@@ -112,7 +112,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--filtered_path",
         type=str,
-        default="import/evidence/FB15k-237/test_filtered_evidence_precise.jsonl",
+        default="import/evidence/FB15k-237/test_filtered_evidence.jsonl",
         help="Path to filtered evidence JSONL file from filter.py"
     )
     parser.add_argument(

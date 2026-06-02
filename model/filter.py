@@ -10,26 +10,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
-# ============================================================
-# Project imports
-# ============================================================
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
 from src.kg_loader import KGLoader
-from src.utils import (
-    LLM_Model,
-    build_messages,
-    safe_json_loads,
-    load_jsonl,
-    save_jsonl,
-)
+from src.utils import LLM_Model, build_messages, safe_json_loads
 
-
-# ============================================================
-# Data structures
-# ============================================================
 
 @dataclass
 class CompatibilityResult:
@@ -38,57 +24,51 @@ class CompatibilityResult:
     reason: str = ""
 
 
-# ============================================================
-# Prompt: precise pair judgment
-# ============================================================
+def load_jsonl(path: str | Path) -> List[Dict[str, Any]]:
+    path = Path(path)
+    data = []
 
-def build_class_pair_prompt(
-    entity_class: str,
-    range_class: str,
-) -> List[Dict[str, str]]:
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                data.append(json.loads(line))
 
+    return data
+
+
+def save_jsonl(data: List[Dict[str, Any]], path: str | Path) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8") as f:
+        for item in data:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def build_class_pair_prompt(entity_class: str, range_class: str) -> List[Dict[str, str]]:
     system_prompt = """
 You are an ontology schema classifier.
 
-Your task is to classify the relationship FROM the entity class TO the relation range class.
-
-Important direction:
-- entity_class -> range_class
+Classify the semantic relationship FROM entity_class TO range_class.
 
 Labels:
-
 1. subclass_or_same
-Use this ONLY when entity_class is the same as range_class,
-or entity_class is more specific than range_class.
-Example:
-entity_class = "city", range_class = "location" => subclass_or_same
-entity_class = "basketball player", range_class = "person" => subclass_or_same
+entity_class is the same as range_class, or entity_class is more specific.
 
 2. parent_of_range
-Use this when entity_class is more general than range_class.
-Example:
-entity_class = "location", range_class = "city" => parent_of_range
-entity_class = "place", range_class = "city" => parent_of_range
-entity_class = "geographical location", range_class = "city" => parent_of_range
-entity_class = "time", range_class = "month" => parent_of_range
+entity_class is more general than range_class.
 
 3. overlap_related
-Use this when the two classes are related but neither is clearly more general.
-Example:
-entity_class = "town", range_class = "city" => overlap_related
-entity_class = "actor", range_class = "director" => overlap_related
+They are related, but neither is clearly parent/subclass.
 
 4. disjoint
-Use this when the two classes are incompatible.
-Example:
-entity_class = "river", range_class = "city" => disjoint
-entity_class = "person", range_class = "chemical compound" => disjoint
+They are incompatible.
 
-Return ONLY one valid JSON object.
-Do not include <think>.
-Do not explain.
+Return ONLY one JSON object.
 Do not output markdown.
-Do not output any text before or after JSON.
+Do not output explanations outside JSON.
+Do not include <think>.
 """.strip()
 
     user_prompt = f"""
@@ -101,156 +81,43 @@ Return exactly:
 /no_think
 """.strip()
 
-    return build_messages(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-    )
+    return build_messages(system_prompt=system_prompt, user_prompt=user_prompt)
 
-
-# ============================================================
-# Prompt: fast query-level judgment
-# ============================================================
-
-def build_fast_query_prompt(
-    query_relation_label: str,
-    range_classes: List[str],
-    entity_classes: List[str],
-) -> List[Dict[str, str]]:
-    system_prompt = """
-You are an ontology class-matching classifier.
-
-Task:
-For each entity class, judge its semantic relationship TO the relation range class.
-
-Important:
-- Only compare entity class with range classes.
-- Do NOT reason about whether the entity can be the subject/member/owner of the relation.
-- Judge whether the entity class itself is compatible with the range class.
-- Return JSON only.
-- Do not output <think>.
-- Do not output explanations.
-- Do not output markdown.
-
-Labels:
-subclass_or_same: entity_class is the same as or more specific than the range class.
-parent_of_range: entity_class is more general than the range class.
-overlap_related: related but neither is clearly parent/subclass.
-disjoint: incompatible.
-
-Examples:
-range = ["city"]
-entity_class = "city" -> subclass_or_same
-entity_class = "location" -> parent_of_range
-entity_class = "place" -> parent_of_range
-entity_class = "town" -> overlap_related
-entity_class = "river" -> disjoint
-entity_class = "sports team" -> disjoint
-
-range = ["month"]
-entity_class = "month" -> subclass_or_same
-entity_class = "time" -> parent_of_range
-
-range = ["music group"]
-entity_class = "band" -> subclass_or_same
-entity_class = "musicgroup" -> subclass_or_same
-entity_class = "person" -> disjoint
-entity_class = "musical instrument" -> disjoint
-""".strip()
-
-    user_prompt = f"""
-Range classes:
-{json.dumps(range_classes, ensure_ascii=False)}
-
-Entity classes:
-{json.dumps(entity_classes, ensure_ascii=False)}
-
-Return exactly this compact JSON format:
-{{
-  "judgments": {{
-    "entity class 1": "label",
-    "entity class 2": "label"
-  }}
-}}
-
-/no_think
-""".strip()
-
-    return build_messages(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-    )
-
-
-# ============================================================
-# Ontology Filter
-# ============================================================
 
 class OntologyFilter:
-    """
-    Ontology-constrained filtering for OD-KGC evidence.
-
-    Modes:
-        precise:
-            Judge each unique (entity_class, range_class) pair.
-            Cache avoids repeated LLM calls.
-            Parallel LLM calls are supported.
-
-        fast_query:
-            For each query, call LLM once to judge all evidence classes
-            against the query relation range.
-            This is faster but approximate for multi-hop paths.
-
-        no_llm:
-            Do not call LLM. Use exact match and fallback scores only.
-    """
-
     RELATION_TO_SCORE = {
         "subclass_or_same": 1.0,
         "parent_of_range": 0.9,
         "overlap_related": 0.8,
         "disjoint": 0.5,
         "no_range_constraint": 1.0,
-        "missing_entity_class": 0.8,
-        "missing_class_text": 0.8,
+        "missing_entity_class": 1.0,
+        "missing_class_text": 1.0,
         "no_llm_fallback": 0.8,
         "llm_error_fallback": 0.8,
+        "gold_tail_protected": 1.0,
     }
 
     def __init__(
         self,
         dataset,
         llm: Optional[LLM_Model] = None,
+        mode: str = "no_llm",
         cache_path: Optional[str | Path] = None,
-        mode: str = "precise",
         parallel_workers: int = 4,
-        missing_range_score: float = 1.0,
-        missing_entity_class_score: float = 0.8,
-        direct_match_score: float = 1.0,
         fallback_score: float = 0.8,
-        top_k_one_hop: int = 10,
-        top_k_paths: int = 10,
-        continue_on_llm_error: bool = True,
         verbose: bool = False,
     ):
-        if mode not in {"precise", "fast_query", "no_llm"}:
-            raise ValueError("mode must be precise, fast_query, or no_llm.")
+        if mode not in {"no_llm", "precise"}:
+            raise ValueError("mode must be no_llm or precise.")
 
         self.dataset = dataset
         self.entities = dataset.entities
         self.relations = dataset.relations
-
         self.llm = llm
         self.mode = mode
-        self.parallel_workers = parallel_workers
-
-        self.missing_range_score = missing_range_score
-        self.missing_entity_class_score = missing_entity_class_score
-        self.direct_match_score = direct_match_score
+        self.parallel_workers = max(1, int(parallel_workers))
         self.fallback_score = fallback_score
-
-        self.top_k_one_hop = top_k_one_hop
-        self.top_k_paths = top_k_paths
-        self.continue_on_llm_error = continue_on_llm_error
         self.verbose = verbose
 
         if cache_path is None:
@@ -258,7 +125,7 @@ class OntologyFilter:
                 PROJECT_ROOT
                 / "import"
                 / "ontology_cache"
-                / f"{dataset.dataset_name}_ontology_cache.json"
+                / f"{dataset.dataset_name}_{mode}_ontology_cache.json"
             )
 
         self.cache_path = Path(cache_path)
@@ -272,52 +139,15 @@ class OntologyFilter:
         self.direct_match_count = 0
         self.fallback_count = 0
 
-    # ========================================================
-    # Main APIs
-    # ========================================================
-
-    @staticmethod
-    def _is_numeric_like(value: Any) -> bool:
-        if value is None:
-            return False
-
-        value = str(value).strip()
-
-        if value == "":
-            return False
-
-        return value.isdigit()
-
-    def filter_evidence_list(
-        self,
-        evidence_list: List[Dict[str, Any]],
-        save_cache_every: int = 100,
-    ) -> List[Dict[str, Any]]:
+    def filter_evidence_list(self, evidence_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         print(f"[OntologyFilter] Mode: {self.mode}")
         print(f"[OntologyFilter] Evidence items: {len(evidence_list)}")
-        print(f"[OntologyFilter] Parallel workers: {self.parallel_workers}")
         print(f"[OntologyFilter] Existing cache size: {len(self.cache)}")
 
         if self.mode == "precise":
             self._precompute_precise_cache(evidence_list)
 
-        elif self.mode == "fast_query":
-            self._precompute_fast_query_cache(evidence_list)
-
-        elif self.mode == "no_llm":
-            print("[OntologyFilter] no_llm mode: skip all LLM calls.")
-
-        results = []
-
-        for idx, evidence in enumerate(evidence_list):
-            filtered = self.filter_evidence_dict(evidence)
-            results.append(filtered)
-
-            if (idx + 1) % save_cache_every == 0:
-                self.save_cache()
-                print(
-                    f"[OntologyFilter] Filtered {idx + 1}/{len(evidence_list)} items."
-                )
+        results = [self.filter_evidence_dict(evidence) for evidence in evidence_list]
 
         self.save_cache()
         self._print_statistics()
@@ -325,62 +155,272 @@ class OntologyFilter:
         return results
 
     def filter_evidence_dict(self, evidence: Dict[str, Any]) -> Dict[str, Any]:
-        if self.mode == "fast_query":
-            return self._filter_evidence_dict_fast_query(evidence)
+        result = dict(evidence)
 
-        return self._filter_evidence_dict_precise(evidence)
+        result["filter_mode"] = self.mode
+        result["filtered_one_hop"] = self._score_one_hop(evidence)
+        result["filtered_paths"] = self._score_paths(evidence)
 
-    # ========================================================
-    # Precise mode: precompute all unique pair judgments
-    # ========================================================
+        return result
+
+    def _score_one_hop(self, evidence: Dict[str, Any]) -> List[Dict[str, Any]]:
+        query_relation_id = int(evidence["query_relation_id"])
+        gold_tail_id = evidence.get("gold_tail_id")
+
+        filtered = []
+
+        for item in evidence.get("one_hop", []):
+            tail_id = int(item["t_id"])
+            raw_score = float(item["score"])
+
+            if self._is_gold_tail_related(item, gold_tail_id):
+                compatibility = CompatibilityResult(
+                    relation="gold_tail_protected",
+                    score=1.0,
+                    reason="Gold tail evidence is protected.",
+                )
+            else:
+                compatibility = self.entity_relation_range_compatibility(
+                    entity_id=tail_id,
+                    relation_id=query_relation_id,
+                )
+
+            new_item = dict(item)
+            new_item["ontology_eta"] = compatibility.score
+            new_item["ontology_relation"] = compatibility.relation
+            new_item["filtered_score"] = raw_score * compatibility.score
+
+            filtered.append(new_item)
+
+        filtered.sort(key=lambda x: x["filtered_score"], reverse=True)
+        return filtered
+
+    def _score_paths(self, evidence: Dict[str, Any]) -> List[Dict[str, Any]]:
+        gold_tail_id = evidence.get("gold_tail_id")
+
+        filtered = []
+
+        for item in evidence.get("paths", []):
+            raw_score = float(item["score"])
+            eta_product = 1.0
+            step_eta_list = []
+
+            for step in item.get("path", []):
+                tail_id = int(step["t_id"])
+                relation_id = int(step["r_id"])
+
+                if self._is_gold_tail_related(step, gold_tail_id):
+                    compatibility = CompatibilityResult(
+                        relation="gold_tail_protected",
+                        score=1.0,
+                        reason="Gold tail in path is protected.",
+                    )
+                else:
+                    compatibility = self.entity_relation_range_compatibility(
+                        entity_id=tail_id,
+                        relation_id=relation_id,
+                    )
+
+                eta_product *= compatibility.score
+
+                # Keep compact step-level checking results.
+                step_eta_list.append(
+                    {
+                        "h_id": step.get("h_id"),
+                        "r_id": step.get("r_id"),
+                        "t_id": step.get("t_id"),
+                        "ontology_eta": compatibility.score,
+                        "ontology_relation": compatibility.relation,
+                    }
+                )
+
+            new_item = dict(item)
+            new_item["ontology_eta_product"] = eta_product
+            new_item["ontology_step_eta"] = step_eta_list
+            new_item["filtered_score"] = raw_score * eta_product
+
+            filtered.append(new_item)
+
+        filtered.sort(key=lambda x: x["filtered_score"], reverse=True)
+        return filtered
+
+    def entity_relation_range_compatibility(
+        self,
+        entity_id: int,
+        relation_id: int,
+    ) -> CompatibilityResult:
+        entity_classes = self.get_entity_classes(entity_id)
+        relation_range = self.get_relation_range(relation_id)
+
+        if not relation_range:
+            return CompatibilityResult(
+                relation="no_range_constraint",
+                score=1.0,
+                reason="No range constraint.",
+            )
+
+        if not entity_classes:
+            return CompatibilityResult(
+                relation="missing_entity_class",
+                score=1.0,
+                reason="Missing entity class.",
+            )
+
+        best = CompatibilityResult(
+            relation="disjoint",
+            score=0.5,
+            reason="Default disjoint.",
+        )
+
+        for ec in entity_classes:
+            for rc in relation_range:
+                current = self.class_pair_compatibility(ec, rc)
+
+                if current.score > best.score:
+                    best = current
+
+                if best.score >= 1.0:
+                    return best
+
+        return best
+
+    def class_pair_compatibility(
+        self,
+        entity_class: str,
+        range_class: str,
+    ) -> CompatibilityResult:
+        entity_class = self._normalize_class_text(entity_class)
+        range_class = self._normalize_class_text(range_class)
+
+        if not entity_class or not range_class:
+            return CompatibilityResult(
+                relation="missing_class_text",
+                score=1.0,
+                reason="Empty class text.",
+            )
+
+        if self._is_direct_match(entity_class, range_class):
+            self.direct_match_count += 1
+            return CompatibilityResult(
+                relation="subclass_or_same",
+                score=1.0,
+                reason="Exact class match.",
+            )
+
+        if self.mode == "no_llm":
+            return self._direct_class_compatibility(entity_class, range_class)
+
+        key = self._pair_cache_key(entity_class, range_class)
+        cached = self.cache.get(key)
+
+        if cached is not None:
+            self.cache_hit_count += 1
+            return CompatibilityResult(
+                relation=cached.get("relation", "disjoint"),
+                score=float(cached.get("score", 0.5)),
+                reason=cached.get("reason", "Loaded from cache."),
+            )
+
+        result = self._judge_pair_with_llm(entity_class, range_class)
+        self._write_cache(key, result)
+        return result
+
+    def _direct_class_compatibility(
+        self,
+        entity_class: str,
+        range_class: str,
+    ) -> CompatibilityResult:
+        ec_tokens = set(entity_class.split())
+        rc_tokens = set(range_class.split())
+
+        if not ec_tokens or not rc_tokens:
+            return CompatibilityResult(
+                relation="no_llm_fallback",
+                score=self.fallback_score,
+                reason="No valid tokens.",
+            )
+
+        if rc_tokens.issubset(ec_tokens):
+            return CompatibilityResult(
+                relation="subclass_or_same",
+                score=1.0,
+                reason="Range tokens are contained in entity class.",
+            )
+
+        if ec_tokens.issubset(rc_tokens):
+            return CompatibilityResult(
+                relation="parent_of_range",
+                score=0.9,
+                reason="Entity class tokens are contained in range class.",
+            )
+
+        if ec_tokens & rc_tokens:
+            return CompatibilityResult(
+                relation="overlap_related",
+                score=0.8,
+                reason="Class texts partially overlap.",
+            )
+
+        self.fallback_count += 1
+        return CompatibilityResult(
+            relation="no_llm_fallback",
+            score=self.fallback_score,
+            reason="No LLM mode; fallback score.",
+        )
 
     def _precompute_precise_cache(
         self,
         evidence_list: List[Dict[str, Any]],
     ) -> None:
-        required_pairs = self.collect_required_class_pairs(evidence_list)
-        uncached_pairs = []
+        pairs = self.collect_required_class_pairs(evidence_list)
+        uncached = []
 
-        for entity_class, range_class in required_pairs:
-            key = self._pair_cache_key(entity_class, range_class)
+        for ec, rc in pairs:
+            ec = self._normalize_class_text(ec)
+            rc = self._normalize_class_text(rc)
 
-            if self._is_direct_match(entity_class, range_class):
+            if not ec or not rc:
+                continue
+
+            if self._is_direct_match(ec, rc):
                 self._write_cache(
-                    key,
+                    self._pair_cache_key(ec, rc),
                     CompatibilityResult(
                         relation="subclass_or_same",
-                        score=self.direct_match_score,
+                        score=1.0,
                         reason="Exact class match.",
                     ),
                 )
                 self.direct_match_count += 1
                 continue
 
+            key = self._pair_cache_key(ec, rc)
+
             if key in self.cache:
                 self.cache_hit_count += 1
                 continue
 
-            if self.mode == "no_llm" or self.llm is None:
+            uncached.append((ec, rc))
+
+        print(f"[OntologyFilter] Required class pairs: {len(pairs)}")
+        print(f"[OntologyFilter] Uncached LLM calls: {len(uncached)}")
+
+        if not uncached:
+            return
+
+        if self.llm is None:
+            for ec, rc in uncached:
                 self._write_cache(
-                    key,
+                    self._pair_cache_key(ec, rc),
                     CompatibilityResult(
                         relation="no_llm_fallback",
                         score=self.fallback_score,
-                        reason="No LLM used; fallback score.",
+                        reason="LLM is not available.",
                     ),
                 )
-                self.fallback_count += 1
-                continue
-
-            uncached_pairs.append((entity_class, range_class))
-
-        print(f"[OntologyFilter] Required class pairs: {len(required_pairs)}")
-        print(f"[OntologyFilter] Uncached LLM pair calls: {len(uncached_pairs)}")
-
-        if not uncached_pairs:
             return
 
-        self._parallel_judge_pairs(uncached_pairs)
+        self._parallel_judge_pairs(uncached)
 
     def collect_required_class_pairs(
         self,
@@ -390,46 +430,33 @@ class OntologyFilter:
 
         for evidence in evidence_list:
             query_relation_id = int(evidence["query_relation_id"])
-
-            # one-hop: tail class vs query relation range
             query_range = self.get_relation_range(query_relation_id)
 
             for item in evidence.get("one_hop", []):
                 tail_id = int(item["t_id"])
-                entity_classes = self.get_entity_classes(tail_id)
-
-                for ec in entity_classes:
+                for ec in self.get_entity_classes(tail_id):
                     for rc in query_range:
                         pairs.add((ec, rc))
 
-            # path: each step tail class vs step relation range
             for path_item in evidence.get("paths", []):
                 for step in path_item.get("path", []):
                     tail_id = int(step["t_id"])
                     relation_id = int(step["r_id"])
 
-                    entity_classes = self.get_entity_classes(tail_id)
-                    relation_range = self.get_relation_range(relation_id)
-
-                    for ec in entity_classes:
-                        for rc in relation_range:
+                    for ec in self.get_entity_classes(tail_id):
+                        for rc in self.get_relation_range(relation_id):
                             pairs.add((ec, rc))
 
         return sorted(pairs)
 
-    def _parallel_judge_pairs(
-        self,
-        pairs: List[Tuple[str, str]],
-    ) -> None:
-        max_workers = max(1, int(self.parallel_workers))
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    def _parallel_judge_pairs(self, pairs: List[Tuple[str, str]]) -> None:
+        with ThreadPoolExecutor(max_workers=self.parallel_workers) as executor:
             future_to_pair = {
                 executor.submit(self._judge_pair_with_llm, ec, rc): (ec, rc)
                 for ec, rc in pairs
             }
 
-            done_count = 0
+            done = 0
 
             for future in as_completed(future_to_pair):
                 ec, rc = future_to_pair[future]
@@ -438,24 +465,20 @@ class OntologyFilter:
                 try:
                     result = future.result()
                 except Exception as e:
-                    if self.continue_on_llm_error:
-                        result = CompatibilityResult(
-                            relation="llm_error_fallback",
-                            score=self.fallback_score,
-                            reason=f"LLM error: {str(e)}",
-                        )
-                    else:
-                        raise
+                    result = CompatibilityResult(
+                        relation="llm_error_fallback",
+                        score=self.fallback_score,
+                        reason=f"LLM error: {str(e)}",
+                    )
 
                 self._write_cache(key, result)
+                done += 1
 
-                done_count += 1
-
-                if self.verbose or done_count % 20 == 0:
+                if self.verbose or done % 20 == 0:
                     print(
-                        f"[OntologyFilter] Pair LLM progress: "
-                        f"{done_count}/{len(pairs)} | "
-                        f"{ec} -> {rc}: {result.relation}, eta={result.score}"
+                        f"[OntologyFilter] LLM progress: "
+                        f"{done}/{len(pairs)} | {ec} -> {rc}: "
+                        f"{result.relation}, eta={result.score}"
                     )
 
         self.save_cache()
@@ -467,11 +490,14 @@ class OntologyFilter:
     ) -> CompatibilityResult:
         self.llm_call_count += 1
 
-        messages = build_class_pair_prompt(
-            entity_class=entity_class,
-            range_class=range_class,
-        )
+        if self.llm is None:
+            return CompatibilityResult(
+                relation="no_llm_fallback",
+                score=self.fallback_score,
+                reason="LLM is not available.",
+            )
 
+        messages = build_class_pair_prompt(entity_class, range_class)
         raw_output = self.llm.infer_raw(messages)
         parsed = safe_json_loads(raw_output, default=None)
 
@@ -479,7 +505,7 @@ class OntologyFilter:
             return CompatibilityResult(
                 relation="llm_error_fallback",
                 score=self.fallback_score,
-                reason=f"Failed to parse LLM output: {raw_output}",
+                reason="Failed to parse LLM output.",
             )
 
         relation = self._normalize_relation_label(parsed.get("relation", ""))
@@ -491,563 +517,20 @@ class OntologyFilter:
             reason=reason,
         )
 
-    # ========================================================
-    # Fast query mode: one LLM call per query
-    # ========================================================
-
-    def _precompute_fast_query_cache(
-        self,
-        evidence_list: List[Dict[str, Any]],
-    ) -> None:
-        tasks = []
-
-        for idx, evidence in enumerate(evidence_list):
-            query_key, query_task = self._build_fast_query_task(evidence, idx)
-
-            if query_task is None:
-                continue
-
-            if query_key in self.cache:
-                self.cache_hit_count += 1
-                continue
-
-            if self.llm is None:
-                fallback = {
-                    "mode": "fast_query",
-                    "judgments": {},
-                    "reason": "No LLM used; fallback will be applied.",
-                }
-                self._write_raw_cache(query_key, fallback)
-                self.fallback_count += 1
-                continue
-
-            tasks.append((query_key, query_task))
-
-        print(f"[OntologyFilter] Fast query tasks: {len(tasks)}")
-        print(
-            "[OntologyFilter] In fast_query mode, each task is one LLM call "
-            "for one query."
-        )
-
-        if not tasks:
-            return
-
-        self._parallel_judge_fast_queries(tasks)
-
-    def _build_fast_query_task(
-        self,
-        evidence: Dict[str, Any],
-        evidence_index: int,
-    ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        query_relation_id = int(evidence["query_relation_id"])
-        query_relation_label = evidence.get(
-            "query_relation_label",
-            self._relation_label(query_relation_id),
-        )
-
-        range_classes = self.get_relation_range(query_relation_id)
-
-        if not range_classes:
-            return "", None
-
-        entity_classes = self.collect_query_entity_classes(evidence)
-
-        if not entity_classes:
-            return "", None
-
-        query_key = self._fast_query_cache_key(
-            evidence_index=evidence_index,
-            query_relation_id=query_relation_id,
-            range_classes=range_classes,
-            entity_classes=entity_classes,
-        )
-
-        query_task = {
-            "query_relation_id": query_relation_id,
-            "query_relation_label": query_relation_label,
-            "range_classes": range_classes,
-            "entity_classes": entity_classes,
-        }
-
-        return query_key, query_task
-
-    def collect_query_entity_classes(
-        self,
-        evidence: Dict[str, Any],
-    ) -> List[str]:
-        classes = []
-
-        for item in evidence.get("one_hop", []):
-            tail_id = int(item["t_id"])
-            classes.extend(self.get_entity_classes(tail_id))
-
-        for path_item in evidence.get("paths", []):
-            for step in path_item.get("path", []):
-                tail_id = int(step["t_id"])
-                classes.extend(self.get_entity_classes(tail_id))
-
-        return self._deduplicate_clean(classes)
-
-    def _parallel_judge_fast_queries(
-        self,
-        tasks: List[Tuple[str, Dict[str, Any]]],
-    ) -> None:
-        max_workers = max(1, int(self.parallel_workers))
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_task = {
-                executor.submit(self._judge_fast_query_with_llm, task): (key, task)
-                for key, task in tasks
-            }
-
-            done_count = 0
-
-            for future in as_completed(future_to_task):
-                key, task = future_to_task[future]
-
-                try:
-                    result = future.result()
-                except Exception as e:
-                    if self.continue_on_llm_error:
-                        result = {
-                            "mode": "fast_query",
-                            "judgments": {},
-                            "relation": "llm_error_fallback",
-                            "score": self.fallback_score,
-                            "reason": f"LLM error: {str(e)}",
-                        }
-                    else:
-                        raise
-
-                self._write_raw_cache(key, result)
-
-                done_count += 1
-
-                if self.verbose or done_count % 10 == 0:
-                    print(
-                        f"[OntologyFilter] Fast-query LLM progress: "
-                        f"{done_count}/{len(tasks)} | "
-                        f"relation={task['query_relation_label']} | "
-                        f"classes={len(task['entity_classes'])}"
-                    )
-
-        self.save_cache()
-
-    def _judge_fast_query_with_llm(
-        self,
-        task: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        self.llm_call_count += 1
-
-        messages = build_fast_query_prompt(
-            query_relation_label=task["query_relation_label"],
-            range_classes=task["range_classes"],
-            entity_classes=task["entity_classes"],
-        )
-
-        raw_output = self.llm.infer_raw(messages)
-        parsed = safe_json_loads(raw_output, default=None)
-
-        if not isinstance(parsed, dict):
-            return {
-                "mode": "fast_query",
-                "judgments": {},
-                "relation": "llm_error_fallback",
-                "score": self.fallback_score,
-                "reason": f"Failed to parse LLM output: {raw_output}",
-            }
-
-        judgments = parsed.get("judgments", [])
-
-        if not isinstance(judgments, list):
-            judgments = []
-
-        result_map = {}
-
-        for item in judgments:
-            if not isinstance(item, dict):
-                continue
-
-            entity_class = self._normalize_class_text(
-                item.get("entity_class", "")
-            )
-            relation = self._normalize_relation_label(
-                item.get("relation", "")
-            )
-            reason = str(item.get("reason", ""))
-
-            if not entity_class:
-                continue
-
-            result_map[entity_class] = {
-                "relation": relation,
-                "score": self.RELATION_TO_SCORE.get(relation, 0.5),
-                "reason": reason,
-            }
-
-        return {
-            "mode": "fast_query",
-            "judgments": result_map,
-            "range_classes": task["range_classes"],
-        }
-
-    # ========================================================
-    # Filtering: precise/no_llm
-    # ========================================================
-
-    def _filter_evidence_dict_precise(
-        self,
-        evidence: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        query_relation_id = int(evidence["query_relation_id"])
-
-        filtered_one_hop = []
-
-        for item in evidence.get("one_hop", []):
-            tail_id = int(item["t_id"])
-            raw_score = float(item["score"])
-
-            compatibility = self.entity_relation_range_compatibility_precise(
-                entity_id=tail_id,
-                relation_id=query_relation_id,
-            )
-
-            filtered_item = dict(item)
-            filtered_item["ontology_eta"] = compatibility.score
-            filtered_item["ontology_relation"] = compatibility.relation
-            filtered_item["ontology_reason"] = compatibility.reason
-            filtered_item["filtered_score"] = raw_score * compatibility.score
-
-            filtered_one_hop.append(filtered_item)
-
-        filtered_one_hop.sort(
-            key=lambda x: x["filtered_score"],
-            reverse=True,
-        )
-        filtered_one_hop = filtered_one_hop[: self.top_k_one_hop]
-
-        filtered_paths = []
-
-        for item in evidence.get("paths", []):
-            raw_score = float(item["score"])
-            eta_product = 1.0
-            step_results = []
-
-            for step in item.get("path", []):
-                tail_id = int(step["t_id"])
-                relation_id = int(step["r_id"])
-
-                compatibility = self.entity_relation_range_compatibility_precise(
-                    entity_id=tail_id,
-                    relation_id=relation_id,
-                )
-
-                eta_product *= compatibility.score
-
-                step_result = dict(step)
-                step_result["entity_classes"] = self.get_entity_classes(tail_id)
-                step_result["relation_range"] = self.get_relation_range(relation_id)
-                step_result["ontology_eta"] = compatibility.score
-                step_result["ontology_relation"] = compatibility.relation
-                step_result["ontology_reason"] = compatibility.reason
-
-                step_results.append(step_result)
-
-            filtered_item = dict(item)
-            filtered_item["ontology_eta_product"] = eta_product
-            filtered_item["ontology_step_results"] = step_results
-            filtered_item["filtered_score"] = raw_score * eta_product
-
-            filtered_paths.append(filtered_item)
-
-        filtered_paths.sort(
-            key=lambda x: x["filtered_score"],
-            reverse=True,
-        )
-        filtered_paths = filtered_paths[: self.top_k_paths]
-
-        result = dict(evidence)
-        result["filter_mode"] = self.mode
-        result["filtered_one_hop"] = filtered_one_hop
-        result["filtered_paths"] = filtered_paths
-
-        return result
-
-    def entity_relation_range_compatibility_precise(
-        self,
-        entity_id: int,
-        relation_id: int,
-    ) -> CompatibilityResult:
-        entity_classes = self.get_entity_classes(entity_id)
-        relation_range = self.get_relation_range(relation_id)
-
-        if not relation_range:
-            return CompatibilityResult(
-                relation="no_range_constraint",
-                score=self.missing_range_score,
-                reason="The relation has no available range constraint.",
-            )
-
-        if not entity_classes:
-            return CompatibilityResult(
-                relation="missing_entity_class",
-                score=self.missing_entity_class_score,
-                reason="The entity has no available class information.",
-            )
-
-        best = CompatibilityResult(
-            relation="disjoint",
-            score=0.5,
-            reason="Default disjoint.",
-        )
-
-        for ec in entity_classes:
-            for rc in relation_range:
-                current = self.class_pair_compatibility_from_cache(ec, rc)
-
-                if current.score > best.score:
-                    best = current
-
-                if best.score >= 1.0:
-                    return best
-
-        return best
-
-    def class_pair_compatibility_from_cache(
-        self,
-        entity_class: str,
-        range_class: str,
-    ) -> CompatibilityResult:
-        entity_class = self._normalize_class_text(entity_class)
-        range_class = self._normalize_class_text(range_class)
-
-        if not entity_class or not range_class:
-            return CompatibilityResult(
-                relation="missing_class_text",
-                score=self.missing_entity_class_score,
-                reason="Empty class text.",
-            )
-
-        if self._is_direct_match(entity_class, range_class):
-            return CompatibilityResult(
-                relation="subclass_or_same",
-                score=self.direct_match_score,
-                reason="Exact class match.",
-            )
-
-        key = self._pair_cache_key(entity_class, range_class)
-        cached = self.cache.get(key)
-
-        if cached is None:
-            # This should be rare because precise mode precomputes the cache.
-            return CompatibilityResult(
-                relation="no_llm_fallback",
-                score=self.fallback_score,
-                reason="Pair not found in cache; fallback score.",
-            )
-
-        return CompatibilityResult(
-            relation=cached.get("relation", "disjoint"),
-            score=float(cached.get("score", 0.5)),
-            reason=cached.get("reason", "Loaded from cache."),
-        )
-
-    # ========================================================
-    # Filtering: fast_query mode
-    # ========================================================
-
-    def _filter_evidence_dict_fast_query(
-        self,
-        evidence: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        query_relation_id = int(evidence["query_relation_id"])
-        range_classes = self.get_relation_range(query_relation_id)
-        entity_classes = self.collect_query_entity_classes(evidence)
-
-        query_key = self._fast_query_cache_key(
-            evidence_index=None,
-            query_relation_id=query_relation_id,
-            range_classes=range_classes,
-            entity_classes=entity_classes,
-        )
-
-        # Because precompute uses evidence index for uniqueness by default,
-        # this fallback searches any compatible key.
-        fast_cache = self._find_fast_query_cache(
-            query_relation_id=query_relation_id,
-            range_classes=range_classes,
-            entity_classes=entity_classes,
-        )
-
-        filtered_one_hop = []
-
-        for item in evidence.get("one_hop", []):
-            tail_id = int(item["t_id"])
-            raw_score = float(item["score"])
-
-            compatibility = self.entity_compatibility_fast_query(
-                entity_id=tail_id,
-                fast_cache=fast_cache,
-            )
-
-            filtered_item = dict(item)
-            filtered_item["ontology_eta"] = compatibility.score
-            filtered_item["ontology_relation"] = compatibility.relation
-            filtered_item["ontology_reason"] = compatibility.reason
-            filtered_item["filtered_score"] = raw_score * compatibility.score
-
-            filtered_one_hop.append(filtered_item)
-
-        filtered_one_hop.sort(
-            key=lambda x: x["filtered_score"],
-            reverse=True,
-        )
-        filtered_one_hop = filtered_one_hop[: self.top_k_one_hop]
-
-        filtered_paths = []
-
-        for item in evidence.get("paths", []):
-            raw_score = float(item["score"])
-            eta_product = 1.0
-            step_results = []
-
-            for step in item.get("path", []):
-                tail_id = int(step["t_id"])
-
-                compatibility = self.entity_compatibility_fast_query(
-                    entity_id=tail_id,
-                    fast_cache=fast_cache,
-                )
-
-                eta_product *= compatibility.score
-
-                step_result = dict(step)
-                step_result["entity_classes"] = self.get_entity_classes(tail_id)
-                step_result["fast_query_range"] = range_classes
-                step_result["ontology_eta"] = compatibility.score
-                step_result["ontology_relation"] = compatibility.relation
-                step_result["ontology_reason"] = compatibility.reason
-
-                step_results.append(step_result)
-
-            filtered_item = dict(item)
-            filtered_item["ontology_eta_product"] = eta_product
-            filtered_item["ontology_step_results"] = step_results
-            filtered_item["filtered_score"] = raw_score * eta_product
-
-            filtered_paths.append(filtered_item)
-
-        filtered_paths.sort(
-            key=lambda x: x["filtered_score"],
-            reverse=True,
-        )
-        filtered_paths = filtered_paths[: self.top_k_paths]
-
-        result = dict(evidence)
-        result["filter_mode"] = "fast_query"
-        result["fast_query_note"] = (
-            "All evidence classes are judged against the query relation range. "
-            "Path-step relation-specific ranges are ignored for speed."
-        )
-        result["filtered_one_hop"] = filtered_one_hop
-        result["filtered_paths"] = filtered_paths
-
-        return result
-
-    def entity_compatibility_fast_query(
-        self,
-        entity_id: int,
-        fast_cache: Optional[Dict[str, Any]],
-    ) -> CompatibilityResult:
-        entity_classes = self.get_entity_classes(entity_id)
-
-        if not entity_classes:
-            return CompatibilityResult(
-                relation="missing_entity_class",
-                score=self.missing_entity_class_score,
-                reason="The entity has no available class information.",
-            )
-
-        if fast_cache is None:
-            return CompatibilityResult(
-                relation="no_llm_fallback",
-                score=self.fallback_score,
-                reason="No fast-query cache found; fallback score.",
-            )
-
-        judgments = fast_cache.get("judgments", {})
-
-        best = CompatibilityResult(
-            relation="disjoint",
-            score=0.5,
-            reason="Default disjoint in fast-query mode.",
-        )
-
-        for ec in entity_classes:
-            ec_norm = self._normalize_class_text(ec)
-            item = judgments.get(ec_norm)
-
-            if item is None:
-                current = CompatibilityResult(
-                    relation="no_llm_fallback",
-                    score=self.fallback_score,
-                    reason="Class not returned by fast-query LLM; fallback score.",
-                )
-            else:
-                current = CompatibilityResult(
-                    relation=item.get("relation", "disjoint"),
-                    score=float(item.get("score", 0.5)),
-                    reason=item.get("reason", "Loaded from fast-query cache."),
-                )
-
-            if current.score > best.score:
-                best = current
-
-            if best.score >= 1.0:
-                return best
-
-        return best
-
-    def _find_fast_query_cache(
-        self,
-        query_relation_id: int,
-        range_classes: List[str],
-        entity_classes: List[str],
-    ) -> Optional[Dict[str, Any]]:
-        # Search by deterministic suffix because precompute may include evidence index.
-        signature = self._fast_query_signature(
-            query_relation_id=query_relation_id,
-            range_classes=range_classes,
-            entity_classes=entity_classes,
-        )
-
-        for key, value in self.cache.items():
-            if key.startswith("fast_query::") and key.endswith(signature):
-                return value
-
-        return None
-
-    # ========================================================
-    # Ontology access helpers
-    # ========================================================
-
     def get_entity_classes(self, entity_id: int) -> List[str]:
-
         ent = self.entities.get(entity_id)
 
         if ent is None:
             return []
 
-        natural_classes = []
+        classes = []
 
-        # 1. First use the normalized field loaded by KGLoader
         if getattr(ent, "classname", None):
-            natural_classes.extend(self._to_list(ent.classname))
+            classes.extend(self._to_list(ent.classname))
 
         raw = getattr(ent, "raw", None) or {}
 
-        # 2. Then use raw natural-language class fields
-        natural_class_keys = [
+        for key in [
             "classlabel",
             "class_label",
             "classname",
@@ -1055,49 +538,14 @@ class OntologyFilter:
             "classes",
             "types",
             "type",
-        ]
-
-        for key in natural_class_keys:
+        ]:
             if key in raw:
-                natural_classes.extend(self._to_list(raw[key]))
+                classes.extend(self._to_list(raw[key]))
 
-        natural_classes = self._deduplicate_clean(natural_classes)
+        classes = self._deduplicate_clean(classes)
+        classes = [c for c in classes if not self._is_numeric_like(c)]
 
-        # 3. Remove numeric values from natural classes
-        natural_classes = [
-            c for c in natural_classes
-            if not self._is_numeric_like(c)
-        ]
-
-        # 4. If natural-language class labels exist, return them directly
-        if natural_classes:
-            return natural_classes
-
-        # 5. Only when no natural class label exists, fallback to classid
-        fallback_classes = []
-
-        if getattr(ent, "class_id", None):
-            fallback_classes.extend(self._to_list(ent.class_id))
-
-        numeric_class_keys = [
-            "classid",
-            "class_id",
-            "class",
-        ]
-
-        for key in numeric_class_keys:
-            if key in raw:
-                fallback_classes.extend(self._to_list(raw[key]))
-
-        fallback_classes = self._deduplicate_clean(fallback_classes)
-
-        # 6. Still avoid sending pure numbers to LLM if possible
-        fallback_classes = [
-            c for c in fallback_classes
-            if not self._is_numeric_like(c)
-        ]
-
-        return fallback_classes
+        return classes
 
     def get_relation_range(self, relation_id: int) -> List[str]:
         rel = self.relations.get(relation_id)
@@ -1123,48 +571,10 @@ class OntologyFilter:
             if key in raw:
                 ranges.extend(self._to_list(raw[key]))
 
-        return self._deduplicate_clean(ranges)
+        ranges = self._deduplicate_clean(ranges)
+        ranges = [r for r in ranges if not self._is_numeric_like(r)]
 
-    def get_relation_domain(self, relation_id: int) -> List[str]:
-        rel = self.relations.get(relation_id)
-
-        if rel is None:
-            return []
-
-        domains = []
-
-        if getattr(rel, "domain", None):
-            domains.extend(self._to_list(rel.domain))
-
-        raw = getattr(rel, "raw", None) or {}
-
-        for key in [
-            "domain",
-            "domains",
-            "head_type",
-            "head_class",
-            "subject_type",
-        ]:
-            if key in raw:
-                domains.extend(self._to_list(raw[key]))
-
-        return self._deduplicate_clean(domains)
-
-    def _entity_label(self, entity_id: int) -> str:
-        ent = self.entities.get(entity_id)
-        if ent is None:
-            return f"[UnknownEntity:{entity_id}]"
-        return ent.label or str(entity_id)
-
-    def _relation_label(self, relation_id: int) -> str:
-        rel = self.relations.get(relation_id)
-        if rel is None:
-            return f"[UnknownRelation:{relation_id}]"
-        return rel.label or str(relation_id)
-
-    # ========================================================
-    # Cache helpers
-    # ========================================================
+        return ranges
 
     def _load_cache(self) -> Dict[str, Dict[str, Any]]:
         if not self.cache_path.exists():
@@ -1190,11 +600,7 @@ class OntologyFilter:
             with open(self.cache_path, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, ensure_ascii=False, indent=2)
 
-    def _write_cache(
-        self,
-        key: str,
-        result: CompatibilityResult,
-    ) -> None:
+    def _write_cache(self, key: str, result: CompatibilityResult) -> None:
         with self.cache_lock:
             self.cache[key] = {
                 "relation": result.relation,
@@ -1202,49 +608,21 @@ class OntologyFilter:
                 "reason": result.reason,
             }
 
-    def _write_raw_cache(
-        self,
-        key: str,
-        value: Dict[str, Any],
-    ) -> None:
-        with self.cache_lock:
-            self.cache[key] = value
-
     @staticmethod
     def _pair_cache_key(entity_class: str, range_class: str) -> str:
         return f"pair::{entity_class}|||{range_class}"
 
-    def _fast_query_cache_key(
-        self,
-        evidence_index: Optional[int],
-        query_relation_id: int,
-        range_classes: List[str],
-        entity_classes: List[str],
-    ) -> str:
-        signature = self._fast_query_signature(
-            query_relation_id=query_relation_id,
-            range_classes=range_classes,
-            entity_classes=entity_classes,
-        )
-
-        if evidence_index is None:
-            return f"fast_query::{signature}"
-
-        return f"fast_query::{evidence_index}::{signature}"
-
     @staticmethod
-    def _fast_query_signature(
-        query_relation_id: int,
-        range_classes: List[str],
-        entity_classes: List[str],
-    ) -> str:
-        range_part = "||".join(sorted(range_classes))
-        class_part = "||".join(sorted(entity_classes))
-        return f"r={query_relation_id}::range={range_part}::classes={class_part}"
+    def _is_gold_tail_related(item: Dict[str, Any], gold_tail_id: Optional[int]) -> bool:
+        if gold_tail_id is None:
+            return False
 
-    # ========================================================
-    # General helpers
-    # ========================================================
+        try:
+            gold_tail_id = int(gold_tail_id)
+        except Exception:
+            return False
+
+        return item.get("h_id") == gold_tail_id or item.get("t_id") == gold_tail_id
 
     def _normalize_relation_label(self, relation: Any) -> str:
         relation = str(relation).strip().lower()
@@ -1274,6 +652,14 @@ class OntologyFilter:
         return relation
 
     @staticmethod
+    def _normalize_class_text(text: Any) -> str:
+        text = str(text).strip()
+        text = text.replace("_", " ")
+        text = text.replace("/", " / ")
+        text = " ".join(text.split())
+        return text.lower()
+
+    @staticmethod
     def _to_list(value: Any) -> List[str]:
         if value is None:
             return []
@@ -1281,7 +667,7 @@ class OntologyFilter:
         if isinstance(value, list):
             return [str(v) for v in value if v is not None]
 
-        if isinstance(value, tuple) or isinstance(value, set):
+        if isinstance(value, (tuple, set)):
             return [str(v) for v in value if v is not None]
 
         if isinstance(value, dict):
@@ -1297,20 +683,13 @@ class OntologyFilter:
 
         return [str(value)]
 
-    @staticmethod
-    def _normalize_class_text(text: Any) -> str:
-        text = str(text).strip()
-        text = text.replace("_", " ")
-        text = text.replace("/", " / ")
-        text = " ".join(text.split())
-        return text.lower()
-
     def _deduplicate_clean(self, values: List[str]) -> List[str]:
         results = []
         seen = set()
 
         for value in values:
             value = self._normalize_class_text(value)
+
             if not value:
                 continue
 
@@ -1319,6 +698,18 @@ class OntologyFilter:
                 results.append(value)
 
         return results
+
+    @staticmethod
+    def _is_numeric_like(value: Any) -> bool:
+        if value is None:
+            return False
+
+        value = str(value).strip()
+
+        if not value:
+            return False
+
+        return value.isdigit()
 
     def _is_direct_match(self, a: str, b: str) -> bool:
         return self._normalize_class_text(a) == self._normalize_class_text(b)
@@ -1332,10 +723,6 @@ class OntologyFilter:
         print(f"Cache size: {len(self.cache)}")
 
 
-# ============================================================
-# IO and inspection
-# ============================================================
-
 def inspect_filtered_evidence(evidence: Dict[str, Any]) -> None:
     print("=" * 100)
     print(
@@ -1348,93 +735,58 @@ def inspect_filtered_evidence(evidence: Dict[str, Any]) -> None:
     print("\n[Filtered one-hop evidence]")
     for idx, item in enumerate(evidence.get("filtered_one_hop", [])[:10]):
         print(
-            f"{idx + 1}. filtered={item['filtered_score']:.4f} | "
-            f"raw={item['score']:.4f} | "
-            f"eta={item['ontology_eta']:.2f} | "
-            f"{item['ontology_relation']} | "
+            f"{idx + 1}. filtered={item.get('filtered_score', 0):.4f} | "
+            f"raw={item.get('score', 0):.4f} | "
+            f"eta={item.get('ontology_eta', 1.0):.2f} | "
+            f"{item.get('ontology_relation')} | "
             f"{item.get('text')}"
         )
 
     print("\n[Filtered path evidence]")
     for idx, item in enumerate(evidence.get("filtered_paths", [])[:10]):
         print(
-            f"{idx + 1}. filtered={item['filtered_score']:.4f} | "
-            f"raw={item['score']:.4f} | "
+            f"{idx + 1}. filtered={item.get('filtered_score', 0):.4f} | "
+            f"raw={item.get('score', 0):.4f} | "
             f"eta_path={item.get('ontology_eta_product', 1.0):.4f} | "
             f"{item.get('text')}"
         )
 
 
-# ============================================================
-# CLI
-# ============================================================
-
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Ontology-constrained filtering for OD-KGC evidence."
+        description="Ontology-aware evidence scoring for OD-KGC."
     )
 
     parser.add_argument("--data_path", type=str, default="dataset/FB15k-237")
     parser.add_argument("--dataset_name", type=str, default=None)
 
-    parser.add_argument("--input_evidence_path", type=str, default=None)
-    parser.add_argument("--output_evidence_path", type=str, default=None)
+    parser.add_argument("--input_evidence_path", type=str, default="import/evidence/FB15k-237/test_evidence.jsonl")
+    parser.add_argument("--output_evidence_path", type=str, default="import/evidence/FB15k-237/test_filtered_evidence.jsonl")
     parser.add_argument("--cache_path", type=str, default=None)
 
     parser.add_argument(
         "--filter_mode",
         type=str,
         default="no_llm",
-        choices=["precise", "fast_query", "no_llm"],
-        help=(
-            "precise: cache + parallel class-pair LLM judgments; "
-            "fast_query: one LLM call per query; "
-            "no_llm: no LLM calls."
-        ),
+        choices=["no_llm", "precise"],
     )
+
+    parser.add_argument("--parallel_workers", type=int, default=8)
+    parser.add_argument("--fallback_score", type=float, default=0.8)
 
     parser.add_argument(
-        "--parallel_workers",
-        type=int,
-        default=16,
-        help="Number of parallel LLM requests.",
+        "--llm_model",
+        type=str,
+        default="/home/wenbin.guo/.cache/modelscope/hub/models/Qwen/Qwen3-8B",
     )
-
-    parser.add_argument("--llm_model", type=str, default="/home/wenbin.guo/.cache/modelscope/hub/models/Qwen/Qwen3-8B")
     parser.add_argument("--openai_api_key", type=str, default="EMPTY")
     parser.add_argument("--openai_base_url", type=str, default="http://localhost:22014/v1")
     parser.add_argument("--max_tokens", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--timeout", type=float, default=60.0)
 
-    parser.add_argument("--top_k_one_hop", type=int, default=10)
-    parser.add_argument("--top_k_paths", type=int, default=10)
-
-    parser.add_argument("--missing_range_score", type=float, default=1.0)
-    parser.add_argument("--missing_entity_class_score", type=float, default=0.8)
-    parser.add_argument("--fallback_score", type=float, default=0.8)
-
-    parser.add_argument(
-        "--max_items",
-        type=int,
-        default=-1,
-        help="Only process the first N evidence items. Use -1 for all.",
-    )
-
-    parser.add_argument(
-        "--start_index",
-        type=int,
-        default=0,
-        help="Start index of evidence items.",
-    )
-
-    parser.add_argument(
-        "--strict_llm_error",
-        action="store_true",
-        default=False,
-        help="If set, raise error when LLM call fails.",
-    )
-
+    parser.add_argument("--max_items", type=int, default=-1)
+    parser.add_argument("--start_index", type=int, default=0)
     parser.add_argument("--verbose", action="store_true", default=False)
 
     return parser.parse_args()
@@ -1446,37 +798,30 @@ def main():
     data_path = Path(args.data_path)
     dataset_name = args.dataset_name or data_path.name
 
-    if args.input_evidence_path is None:
-        input_evidence_path = (
-            PROJECT_ROOT
-            / "import"
-            / "evidence"
-            / dataset_name
-            / "test_evidence.jsonl"
-        )
-    else:
-        input_evidence_path = Path(args.input_evidence_path)
+    input_evidence_path = (
+        Path(args.input_evidence_path)
+        # if args.input_evidence_path is not None
+        # else PROJECT_ROOT / "import" / "evidence" / dataset_name / "test_evidence.jsonl"
+    )
 
-    if args.output_evidence_path is None:
-        output_evidence_path = (
-            PROJECT_ROOT
-            / "import"
-            / "filtered_evidence"
-            / dataset_name
-            / f"test_filtered_evidence_{args.filter_mode}.jsonl"
-        )
-    else:
-        output_evidence_path = Path(args.output_evidence_path)
+    output_evidence_path = (
+        Path(args.output_evidence_path)
+        if args.output_evidence_path is not None
+        else PROJECT_ROOT
+        / "import"
+        / "filtered_evidence"
+        / dataset_name
+        / f"test_filtered_evidence_{args.filter_mode}.jsonl"
+    )
 
-    if args.cache_path is None:
-        cache_path = (
-            PROJECT_ROOT
-            / "import"
-            / "ontology_cache"
-            / f"{dataset_name}_{args.filter_mode}_ontology_cache.json"
-        )
-    else:
-        cache_path = Path(args.cache_path)
+    cache_path = (
+        Path(args.cache_path)
+        if args.cache_path is not None
+        else PROJECT_ROOT
+        / "import"
+        / "ontology_cache"
+        / f"{dataset_name}_{args.filter_mode}_ontology_cache.json"
+    )
 
     print("[OntologyFilter] Loading dataset...")
     loader = KGLoader(data_path)
@@ -1484,8 +829,6 @@ def main():
 
     print(f"[OntologyFilter] Loading evidence from {input_evidence_path}")
     evidence_list = load_jsonl(input_evidence_path)
-
-    print(f"[OntologyFilter] Original evidence items: {len(evidence_list)}")
 
     if args.start_index > 0:
         evidence_list = evidence_list[args.start_index:]
@@ -1495,10 +838,7 @@ def main():
 
     print(f"[OntologyFilter] Evidence items to process: {len(evidence_list)}")
 
-    if args.filter_mode == "no_llm":
-        llm = None
-        print("[OntologyFilter] no_llm mode: LLM disabled.")
-    else:
+    if args.filter_mode == "precise":
         llm = LLM_Model(
             llm_model=args.llm_model,
             openai_api_key=args.openai_api_key,
@@ -1507,19 +847,17 @@ def main():
             temperature=args.temperature,
             timeout=args.timeout,
         )
+    else:
+        llm = None
+        print("[OntologyFilter] no_llm mode: LLM disabled.")
 
     ontology_filter = OntologyFilter(
         dataset=dataset,
         llm=llm,
-        cache_path=cache_path,
         mode=args.filter_mode,
+        cache_path=cache_path,
         parallel_workers=args.parallel_workers,
-        missing_range_score=args.missing_range_score,
-        missing_entity_class_score=args.missing_entity_class_score,
         fallback_score=args.fallback_score,
-        top_k_one_hop=args.top_k_one_hop,
-        top_k_paths=args.top_k_paths,
-        continue_on_llm_error=not args.strict_llm_error,
         verbose=args.verbose,
     )
 
