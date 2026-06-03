@@ -1,10 +1,10 @@
 CONFIG = {
     # Dataset & Paths
-    "data_path": "dataset/FB15k-237",
-    "dataset_name": "FB15k-237",
+    "data_path": "dataset/WN18RR",
+    "dataset_name": "WN18RR",
     "import_path": "import",
-    "compressed_evidence_path": "import/evidence/FB15k-237/test_compressed_evidence.jsonl",
-    "kge_checkpoint_path": "import/KGE_model/FB15k-237/checkpoint.pt",
+    "compressed_evidence_path": "import/evidence/WN18RR/test_compressed_evidence.jsonl",
+    "kge_checkpoint_path": "import/KGE_model/WN18RR/checkpoint.pt",
     "eval_output_path": "import/eval/FB15k-237/test_llm_qa_eval_parallel.json",
 
     # KGE & Evidence
