@@ -63,7 +63,7 @@ Edit `config.py`:
 
 ```python
 "openai_api_key": "YOUR_API_KEY",
-"openai_base_url": "http://localhost:22014/v1",
+"openai_base_url": "YOUR LLM BASE URL",
 ```
 
 Most hyperparameters already have default values.
